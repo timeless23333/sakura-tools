@@ -9,13 +9,13 @@
   │
 宿主机 Nginx（sakurano.xyz）
   │ 127.0.0.1:8088
-Podman app（FROM scratch，无基础镜像）
+Podman app（直接由 Podman 管理，FROM scratch，无基础镜像）
   ├── /            → Gin 提供 Vue 3 静态文件
   ├── /api/v1/*    → Gin API
   └── /app/data    → SQLite 命名卷
 ```
 
-前端与后端仅通过 `/api/v1` 通信。宿主机只暴露回环地址上的 `8088`，应用端口不直接对公网开放。SQLite 数据保存在 Podman 命名卷 `sakura_data` 中。
+前端与后端仅通过 `/api/v1` 通信。宿主机只暴露回环地址上的 `8088`，应用端口不直接对公网开放。SQLite 数据保存在 Podman 命名卷 `sakura-tools-data` 中。
 
 服务器无需访问 Docker Hub：Vue 在本地构建，服务器使用已经安装的 Go 1.25 编译后端，Podman 的 `scratch` 容器只封装这两份本地产物。
 
@@ -33,7 +33,7 @@ sakura-tools/
 ├── nginx/                # 宿主机 Nginx 配置示例
 ├── scripts/deploy.sh     # 服务器编译与部署脚本
 ├── Containerfile         # FROM scratch，不拉取基础镜像
-└── compose.yaml          # podman-compose 编排
+└── compose.yaml          # 可选的 podman-compose 编排参考
 ```
 
 增加工具时，优先把纯文本、编码、颜色等逻辑放在浏览器端；只有翻译、持久化、重型文件处理或需要隐藏密钥时才进入 Go API。这样可以降低服务器 CPU、内存与带宽压力。
@@ -80,7 +80,7 @@ git push
 
 ## 首次服务器部署
 
-以下命令在 Alibaba Cloud Linux 3 上执行。假设仓库已克隆到 `/opt/sakura-tools`，服务器已安装 Go 1.25.7、Podman 和 podman-compose。
+以下命令在 Alibaba Cloud Linux 3 上执行。假设仓库已克隆到 `/opt/sakura-tools`，服务器已安装 Go 1.25.7 和 Podman。部署脚本直接调用 Podman，不依赖旧版 `podman-compose` 的状态管理。
 
 ```bash
 cd /opt/sakura-tools
@@ -91,8 +91,8 @@ bash scripts/deploy.sh
 部署脚本依次执行：
 
 1. 使用服务器已有的 Go 编译 `backend/server`；构建时关闭项目未使用的 Gin MsgPack 支持并限制为单包并行，以降低 2 GB 服务器的峰值内存；
-2. 使用 `FROM scratch` 构建单一应用容器，不下载任何基础镜像；
-3. 启动容器并请求健康检查接口。
+2. 使用 `FROM scratch` 构建 `localhost/sakura-tools:latest`，不下载任何基础镜像；
+3. 保留 `sakura-tools-data` 数据卷、替换 `sakura-tools-app` 容器并请求健康检查接口。
 
 如果服务器不是常见的 x86_64/amd64 架构，可在部署时指定，例如 ARM64：
 
@@ -122,11 +122,11 @@ bash scripts/deploy.sh
 查看状态和日志：
 
 ```bash
-podman-compose ps
-podman-compose logs --tail=100 app
+podman ps --filter name=sakura-tools-app
+podman logs --tail=100 sakura-tools-app
 ```
 
-回滚时切回已验证的 Git 提交，再运行 `bash scripts/deploy.sh`。SQLite 命名卷不会随容器重建删除；不要执行 `podman-compose down -v`，除非明确需要删除数据。
+回滚时切回已验证的 Git 提交，再运行 `bash scripts/deploy.sh`。SQLite 命名卷不会随容器重建删除；不要执行 `podman volume rm sakura-tools-data`，除非明确需要删除数据库。
 
 ## 扩展约定
 

@@ -5,6 +5,10 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_INDEX="${PROJECT_DIR}/frontend/dist/index.html"
 BACKEND_BINARY="${PROJECT_DIR}/backend/server"
 DEPLOY_GOARCH="${DEPLOY_GOARCH:-amd64}"
+HTTP_PORT="${HTTP_PORT:-8088}"
+IMAGE_NAME="${IMAGE_NAME:-localhost/sakura-tools:latest}"
+CONTAINER_NAME="${CONTAINER_NAME:-sakura-tools-app}"
+VOLUME_NAME="${VOLUME_NAME:-sakura-tools-data}"
 
 if [[ ! -f "${FRONTEND_INDEX}" ]]; then
   echo "错误：未找到 frontend/dist/index.html。"
@@ -20,10 +24,41 @@ CGO_ENABLED=0 GOOS=linux GOARCH="${DEPLOY_GOARCH}" \
 
 echo "[2/3] 构建不含基础镜像的 scratch 容器…"
 cd "${PROJECT_DIR}"
-podman-compose up -d --build
+podman build --pull=never -t "${IMAGE_NAME}" -f Containerfile .
+
+podman volume inspect "${VOLUME_NAME}" >/dev/null 2>&1 || \
+  podman volume create "${VOLUME_NAME}" >/dev/null
+
+# 构建成功后再替换容器，尽量缩短发布中断时间。
+podman rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+podman run --pull=never -d \
+  --name "${CONTAINER_NAME}" \
+  --restart=unless-stopped \
+  -p "127.0.0.1:${HTTP_PORT}:8080" \
+  -e GIN_MODE=release \
+  -e APP_ADDRESS=:8080 \
+  -e DATABASE_PATH=/app/data/sakura-tools.db \
+  -e FRONTEND_DIR=/app/public \
+  -e TZ=Asia/Shanghai \
+  -v "${VOLUME_NAME}:/app/data" \
+  --read-only \
+  --security-opt no-new-privileges \
+  "${IMAGE_NAME}"
 
 echo "[3/3] 检查服务…"
-podman-compose ps
-curl --fail --silent --show-error http://127.0.0.1:"${HTTP_PORT:-8088}"/api/v1/health
+podman ps --filter "name=${CONTAINER_NAME}"
+
+for attempt in {1..10}; do
+  if curl --fail --silent --show-error \
+    "http://127.0.0.1:${HTTP_PORT}/api/v1/health"; then
+    echo
+    echo "部署完成。"
+    exit 0
+  fi
+  sleep 1
+done
+
 echo
-echo "部署完成。"
+echo "错误：服务未通过健康检查。最近日志如下："
+podman logs --tail=100 "${CONTAINER_NAME}" || true
+exit 1
