@@ -1,0 +1,17 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend
+backend/data/
+backend/server
+backend/.gocache/
+*.db
+*.db-shm
+*.db-wal
+
+# Local settings
+.env
+.DS_Store
+.vscode/
+.idea/
