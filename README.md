@@ -90,7 +90,7 @@ bash scripts/deploy.sh
 
 部署脚本依次执行：
 
-1. 使用服务器已有的 Go 编译 `backend/server`；
+1. 使用服务器已有的 Go 编译 `backend/server`；构建时关闭项目未使用的 Gin MsgPack 支持并限制为单包并行，以降低 2 GB 服务器的峰值内存；
 2. 使用 `FROM scratch` 构建单一应用容器，不下载任何基础镜像；
 3. 启动容器并请求健康检查接口。
 

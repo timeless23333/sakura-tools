@@ -16,7 +16,7 @@ echo "[1/3] 使用服务器现有 Go 编译 Linux 后端…"
 cd "${PROJECT_DIR}/backend"
 GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
 CGO_ENABLED=0 GOOS=linux GOARCH="${DEPLOY_GOARCH}" \
-  go build -trimpath -ldflags="-s -w" -o "${BACKEND_BINARY}" ./cmd/server
+  go build -p=1 -tags=nomsgpack -trimpath -ldflags="-s -w" -o "${BACKEND_BINARY}" ./cmd/server
 
 echo "[2/3] 构建不含基础镜像的 scratch 容器…"
 cd "${PROJECT_DIR}"
