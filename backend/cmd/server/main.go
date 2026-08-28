@@ -27,7 +27,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.Address,
-		Handler:           httpapi.NewRouter(db, logger, cfg.Mode),
+		Handler:           httpapi.NewRouter(db, logger, cfg.Mode, cfg.FrontendDir),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

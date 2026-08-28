@@ -3,7 +3,10 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +40,7 @@ var toolCatalog = []tool{
 	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: false},
 }
 
-func NewRouter(s *store.Store, logger *slog.Logger, mode string) http.Handler {
+func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string) http.Handler {
 	gin.SetMode(mode)
 	router := gin.New()
 	router.Use(gin.Recovery(), requestLogger(logger))
@@ -47,8 +50,44 @@ func NewRouter(s *store.Store, logger *slog.Logger, mode string) http.Handler {
 	api.GET("/health", h.health)
 	api.GET("/tools", h.tools)
 	api.POST("/events/tool-opened", h.toolOpened)
+	router.NoRoute(spaHandler(frontendDir))
 
 	return router
+}
+
+func spaHandler(frontendDir string) gin.HandlerFunc {
+	root, err := filepath.Abs(frontendDir)
+	if err != nil {
+		root = frontendDir
+	}
+	indexPath := filepath.Join(root, "index.html")
+
+	return func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		requestPath := strings.TrimPrefix(filepath.Clean("/"+c.Request.URL.Path), string(filepath.Separator))
+		candidate := filepath.Join(root, filepath.FromSlash(requestPath))
+		relative, relErr := filepath.Rel(root, candidate)
+		if relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+				if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+					c.Header("Cache-Control", "public, max-age=604800, immutable")
+				}
+				c.File(candidate)
+				return
+			}
+		}
+
+		c.Header("Cache-Control", "no-cache")
+		c.File(indexPath)
+	}
 }
 
 func (h *handler) health(c *gin.Context) {

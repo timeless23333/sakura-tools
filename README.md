@@ -9,14 +9,15 @@
   │
 宿主机 Nginx（sakurano.xyz）
   │ 127.0.0.1:8088
-Podman frontend（Vue 静态文件 + 内部 Nginx）
-  ├── /            → Vue 3 SPA
-  └── /api/*       → backend:8080
-                         │
-                     Gin + SQLite
+Podman app（FROM scratch，无基础镜像）
+  ├── /            → Gin 提供 Vue 3 静态文件
+  ├── /api/v1/*    → Gin API
+  └── /app/data    → SQLite 命名卷
 ```
 
-前端与后端仅通过 `/api/v1` 通信。宿主机只暴露回环地址上的 `8088`，后端端口不对公网开放。SQLite 数据保存在 Podman 命名卷 `sakura_data` 中。
+前端与后端仅通过 `/api/v1` 通信。宿主机只暴露回环地址上的 `8088`，应用端口不直接对公网开放。SQLite 数据保存在 Podman 命名卷 `sakura_data` 中。
+
+服务器无需访问 Docker Hub：Vue 在本地构建，服务器使用已经安装的 Go 1.25 编译后端，Podman 的 `scratch` 容器只封装这两份本地产物。
 
 ## 目录
 
@@ -30,6 +31,8 @@ sakura-tools/
 │   ├── cmd/server
 │   └── internal
 ├── nginx/                # 宿主机 Nginx 配置示例
+├── scripts/deploy.sh     # 服务器编译与部署脚本
+├── Containerfile         # FROM scratch，不拉取基础镜像
 └── compose.yaml          # podman-compose 编排
 ```
 
@@ -59,15 +62,42 @@ cd frontend && npm run build
 cd ../backend && go test ./...
 ```
 
+### 提交前端构建产物
+
+服务器没有 Node.js，也无法拉取 Node 容器镜像，因此每次修改前端后，都要在本地构建并把 `frontend/dist` 一起提交：
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+git add frontend/dist frontend/src
+git commit -m "更新前端"
+git push
+```
+
+`frontend/dist` 中的文件名包含内容哈希，浏览器可以安全缓存；不要手动编辑这些生成文件。
+
 ## 首次服务器部署
 
-以下命令在 Alibaba Cloud Linux 3 上执行。假设仓库已克隆到 `/opt/sakura-tools`。
+以下命令在 Alibaba Cloud Linux 3 上执行。假设仓库已克隆到 `/opt/sakura-tools`，服务器已安装 Go 1.25.7、Podman 和 podman-compose。
 
 ```bash
 cd /opt/sakura-tools
 cp .env.example .env
-podman-compose up -d --build
-curl http://127.0.0.1:8088/api/v1/health
+bash scripts/deploy.sh
+```
+
+部署脚本依次执行：
+
+1. 使用服务器已有的 Go 编译 `backend/server`；
+2. 使用 `FROM scratch` 构建单一应用容器，不下载任何基础镜像；
+3. 启动容器并请求健康检查接口。
+
+如果服务器不是常见的 x86_64/amd64 架构，可在部署时指定，例如 ARM64：
+
+```bash
+DEPLOY_GOARCH=arm64 bash scripts/deploy.sh
 ```
 
 安装宿主机 Nginx 配置前，先备份现有配置并检查是否已有同名 `server_name`：
@@ -86,19 +116,17 @@ sudo systemctl reload nginx
 ```bash
 cd /opt/sakura-tools
 git pull --ff-only
-podman-compose up -d --build
-podman image prune -f
+bash scripts/deploy.sh
 ```
 
 查看状态和日志：
 
 ```bash
 podman-compose ps
-podman-compose logs --tail=100 backend
-podman-compose logs --tail=100 frontend
+podman-compose logs --tail=100 app
 ```
 
-回滚时切回已验证的 Git 提交，再运行 `podman-compose up -d --build`。SQLite 命名卷不会随容器重建删除；不要执行 `podman-compose down -v`，除非明确需要删除数据。
+回滚时切回已验证的 Git 提交，再运行 `bash scripts/deploy.sh`。SQLite 命名卷不会随容器重建删除；不要执行 `podman-compose down -v`，除非明确需要删除数据。
 
 ## 扩展约定
 

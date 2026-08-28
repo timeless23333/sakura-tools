@@ -5,6 +5,7 @@ import "os"
 type Config struct {
 	Address      string
 	DatabasePath string
+	FrontendDir  string
 	Mode         string
 }
 
@@ -12,6 +13,7 @@ func Load() Config {
 	return Config{
 		Address:      envOr("APP_ADDRESS", ":8080"),
 		DatabasePath: envOr("DATABASE_PATH", "./data/sakura-tools.db"),
+		FrontendDir:  envOr("FRONTEND_DIR", "../frontend/dist"),
 		Mode:         envOr("GIN_MODE", "release"),
 	}
 }
