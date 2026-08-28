@@ -1,6 +1,7 @@
 <script setup>
 import { GitForkIcon as GitFork, HeartIcon as Heart, MoonIcon as Moon, SunIcon as Sun } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
+import fufuLogo from './assets/fufu.png'
 
 const isDark = ref(false)
 
@@ -21,7 +22,9 @@ function toggleDark() {
   <div class="site-shell">
     <header class="site-header">
       <router-link class="brand" to="/" aria-label="Sakura Tools 首页">
-        <span class="brand-mark" aria-hidden="true">桜</span>
+        <span class="brand-mark" aria-hidden="true">
+          <img :src="fufuLogo" alt="" />
+        </span>
         <span>
           <strong>Sakura</strong>
           <small>TOOLS / 工具箱</small>
