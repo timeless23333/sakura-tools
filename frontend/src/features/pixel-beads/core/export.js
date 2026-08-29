@@ -292,8 +292,8 @@ export function exportPng(cells, columns, rows, colors, filename, options = {}) 
 export function exportPdf(cells, columns, rows, colors, filename, options = {}) {
   if (!cells?.length) return
   const pages = []
-  const columnsPerPage = 24
-  const rowsPerPage = 32
+  const columnsPerPage = Math.max(8, Number(options.boardSize) || 29)
+  const rowsPerPage = columnsPerPage
   const columnPages = Math.ceil(columns / columnsPerPage)
   const rowPages = Math.ceil(rows / rowsPerPage)
   for (let rowPage = 0; rowPage < rowPages; rowPage += 1) {

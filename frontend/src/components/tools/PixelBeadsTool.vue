@@ -1,19 +1,29 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import {
+  BoxSelectIcon as BoxSelect,
   CropIcon as Crop,
-  DownloadIcon as Download,
   EraserIcon as Eraser,
   FileImageIcon as FileImage,
   FileTextIcon as FileText,
+  FlipHorizontal2Icon as FlipHorizontal,
+  FlipVertical2Icon as FlipVertical,
+  FolderOpenIcon as FolderOpen,
   Grid3X3Icon as Grid3X3,
   ImagePlusIcon as ImagePlus,
+  ListChecksIcon as ListChecks,
   Maximize2Icon as Fit,
+  PaintBucketIcon as PaintBucket,
   PaintbrushIcon as Paintbrush,
   PipetteIcon as Pipette,
   Redo2Icon as Redo,
   RefreshCwIcon as Refresh,
+  ReplaceAllIcon as ReplaceAll,
+  SaveIcon as Save,
   ShieldCheckIcon as ShieldCheck,
+  SparklesIcon as Sparkles,
+  SquareIcon as Square,
+  TagsIcon as Tags,
   Undo2Icon as Undo,
   UploadCloudIcon as UploadCloud,
 } from '@lucide/vue'
@@ -21,8 +31,20 @@ import { palettes, getPalette } from '../../features/pixel-beads/core/palettes'
 import { decodeImage, drawCropPreview, quantizeImage } from '../../features/pixel-beads/core/image'
 import { countColors, drawBeadGrid } from '../../features/pixel-beads/core/render'
 import { exportPdf, exportPng } from '../../features/pixel-beads/core/export'
+import {
+  fillRectangle,
+  floodFill,
+  mirrorCells,
+  reducePaletteUsage,
+  removeSpeckles,
+  replaceColor,
+  suggestColorMerges,
+  symmetricIndices,
+} from '../../features/pixel-beads/core/editor'
+import { createProject, downloadTextFile, materialListCsv, parseProject } from '../../features/pixel-beads/core/project'
 
 const fileInput = ref(null)
+const projectInput = ref(null)
 const cropCanvas = ref(null)
 const beadCanvas = ref(null)
 const canvasViewport = ref(null)
@@ -43,6 +65,7 @@ const settings = reactive({
   saturation: 106,
   contrast: 104,
   brightness: 100,
+  maxColors: 0,
   beadSize: 5,
   paletteId: palettes[0].id,
 })
@@ -50,11 +73,16 @@ const activeTool = ref('brush')
 const selectedColor = ref(0)
 const canvasCellSize = ref(16)
 const showGrid = ref(true)
+const showCodes = ref(false)
 const previewMode = ref('pixel')
+const selection = ref(null)
+const symmetry = reactive({ horizontal: false, vertical: false })
+const inventory = reactive({})
 const past = ref([])
 const future = ref([])
 let strokeCells = null
 let lastCell = -1
+let dragRegion = null
 let renderFrame = 0
 const sizePresets = [29, 48, 52, 80, 100]
 
@@ -68,6 +96,11 @@ const physicalSize = computed(() => ({
 const canUndo = computed(() => past.value.length > 0)
 const canRedo = computed(() => future.value.length > 0)
 const selected = computed(() => palette.value.colors[selectedColor.value])
+const mergeSuggestions = computed(() => suggestColorMerges(cells.value, palette.value.colors))
+const shortageTotal = computed(() => statistics.value.reduce((total, item) => {
+  const owned = Math.max(0, Number(inventory[item.id]) || 0)
+  return total + Math.max(0, item.count - owned)
+}, 0))
 
 function clampSettings() {
   settings.columns = Math.max(8, Math.min(150, Number(settings.columns) || 48))
@@ -148,7 +181,10 @@ function renderEditor() {
   drawBeadGrid(beadCanvas.value, cells.value, gridSize.columns, gridSize.rows, palette.value.colors, {
     cellSize: canvasCellSize.value,
     showGrid: showGrid.value,
+    showCodes: showCodes.value,
     mode: previewMode.value,
+    selection: selection.value,
+    symmetry,
   })
 }
 
@@ -201,6 +237,16 @@ function cellFromPointer(event) {
   return row * gridSize.columns + column
 }
 
+function pointFromIndex(index) {
+  return { column: index % gridSize.columns, row: Math.floor(index / gridSize.columns) }
+}
+
+function commit(nextCells) {
+  snapshot()
+  cells.value = nextCells
+  nextTick(scheduleRender)
+}
+
 function applyAt(index) {
   if (index < 0 || index === lastCell) return
   lastCell = index
@@ -214,8 +260,9 @@ function applyAt(index) {
     return
   }
   const value = activeTool.value === 'eraser' ? -1 : selectedColor.value
-  if (strokeCells[index] === value) return
-  strokeCells[index] = value
+  const targets = symmetricIndices(index, gridSize.columns, gridSize.rows, symmetry)
+  if (targets.every((target) => strokeCells[target] === value)) return
+  for (const target of targets) strokeCells[target] = value
   cells.value = new Int16Array(strokeCells)
   scheduleRender()
 }
@@ -225,24 +272,123 @@ function beginStroke(event) {
   event.preventDefault()
   beadCanvas.value.setPointerCapture?.(event.pointerId)
   lastCell = -1
+  const index = cellFromPointer(event)
+  if (index < 0) return
+  if (activeTool.value === 'bucket') {
+    commit(floodFill(cells.value, gridSize.columns, gridSize.rows, index, selectedColor.value, symmetry))
+    return
+  }
+  if (activeTool.value === 'replace') {
+    commit(replaceColor(cells.value, cells.value[index], selectedColor.value))
+    return
+  }
+  if (activeTool.value === 'rectangle' || activeTool.value === 'select') {
+    const point = pointFromIndex(index)
+    dragRegion = { startColumn: point.column, startRow: point.row, endColumn: point.column, endRow: point.row }
+    selection.value = { ...dragRegion }
+    if (activeTool.value === 'rectangle') snapshot()
+    scheduleRender()
+    return
+  }
   if (activeTool.value !== 'picker') snapshot()
   strokeCells = new Int16Array(cells.value)
-  applyAt(cellFromPointer(event))
+  applyAt(index)
 }
 
 function continueStroke(event) {
-  if (!strokeCells || !(event.buttons & 1)) return
-  applyAt(cellFromPointer(event))
+  if (!(event.buttons & 1)) return
+  const index = cellFromPointer(event)
+  if (dragRegion && index >= 0) {
+    const point = pointFromIndex(index)
+    dragRegion.endColumn = point.column
+    dragRegion.endRow = point.row
+    selection.value = { ...dragRegion }
+    scheduleRender()
+    return
+  }
+  if (strokeCells) applyAt(index)
 }
 
 function endStroke() {
+  if (dragRegion && activeTool.value === 'rectangle') {
+    cells.value = fillRectangle(cells.value, gridSize.columns, gridSize.rows, dragRegion, selectedColor.value, symmetry)
+    selection.value = null
+  }
+  dragRegion = null
   strokeCells = null
   lastCell = -1
+  scheduleRender()
+}
+
+function mirrorPattern(axis) {
+  if (!cells.value.length) return
+  commit(mirrorCells(cells.value, gridSize.columns, gridSize.rows, axis, selection.value))
+}
+
+function cleanSpeckles() {
+  if (!cells.value.length) return
+  commit(removeSpeckles(cells.value, gridSize.columns, gridSize.rows, 2))
+}
+
+function enforceColorLimit() {
+  if (!cells.value.length || !settings.maxColors) return
+  commit(reducePaletteUsage(cells.value, palette.value.colors, settings.maxColors))
+}
+
+function applyMerge(suggestion) {
+  commit(replaceColor(cells.value, suggestion.source.index, suggestion.target.index))
+}
+
+function saveProject() {
+  if (!cells.value.length) return
+  const project = createProject({
+    cells: cells.value,
+    columns: gridSize.columns,
+    rows: gridSize.rows,
+    paletteId: palette.value.id,
+    settings,
+    inventory,
+  })
+  downloadTextFile(JSON.stringify(project), `${fileBase()}.sakurabeads`)
+}
+
+async function openProject(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  error.value = ''
+  try {
+    const project = parseProject(await file.text(), palettes)
+    sourceImage.value?.close?.()
+    sourceImage.value = null
+    sourceName.value = file.name.replace(/\.sakurabeads$/i, '')
+    settings.paletteId = project.palette.id
+    settings.columns = project.columns
+    settings.rows = project.rows
+    Object.assign(settings, project.settings || {})
+    gridSize.columns = project.columns
+    gridSize.rows = project.rows
+    cells.value = project.cells
+    for (const key of Object.keys(inventory)) delete inventory[key]
+    Object.assign(inventory, project.inventory || {})
+    selectedColor.value = project.cells.find((value) => value >= 0) ?? 0
+    selection.value = null
+    past.value = []
+    future.value = []
+    await nextTick()
+    fitCanvas()
+    scheduleRender()
+  } catch (projectError) {
+    error.value = projectError.message || '工程文件读取失败'
+  }
+}
+
+function exportMaterials() {
+  downloadTextFile(materialListCsv(statistics.value, inventory), `${fileBase()}-材料清单.csv`, 'text/csv;charset=utf-8')
 }
 
 function chooseColor(index) {
   selectedColor.value = index
-  activeTool.value = 'brush'
 }
 
 function fileBase() {
@@ -257,7 +403,10 @@ watch(
 watch(() => settings.paletteId, () => {
   if (sourceImage.value) generatePattern()
 })
-watch([canvasCellSize, showGrid, previewMode], () => nextTick(scheduleRender))
+watch(
+  [canvasCellSize, showGrid, showCodes, previewMode, selection, () => symmetry.horizontal, () => symmetry.vertical],
+  () => nextTick(scheduleRender),
+)
 
 function onKeyboardShortcut(event) {
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') return
@@ -278,7 +427,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="bead-studio">
     <div
-      v-if="!sourceImage"
+      v-if="!sourceImage && !cells.length"
       class="bead-upload"
       :class="{ dragging: draggingFile }"
       @dragenter.prevent="draggingFile = true"
@@ -294,6 +443,8 @@ onBeforeUnmount(() => {
       <button class="primary-button" type="button" :disabled="busy" @click="fileInput?.click()">
         <ImagePlus :size="17" /> {{ busy ? '正在读取…' : '选择图片' }}
       </button>
+      <button class="project-open-button" type="button" @click="projectInput?.click()"><FolderOpen :size="16" /> 打开拼豆工程</button>
+      <input ref="projectInput" type="file" accept=".sakurabeads,application/json" hidden @change="openProject" />
       <small>最大 12 MB · 不上传服务器</small>
       <p v-if="error" class="error-message">{{ error }}</p>
     </div>
@@ -313,8 +464,10 @@ onBeforeUnmount(() => {
             <button type="button" @click="fileInput?.click()"><Refresh :size="13" /> 换图</button>
             <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onFileChange" />
           </div>
-          <canvas ref="cropCanvas" class="crop-preview" aria-label="裁剪预览" />
+          <canvas v-if="sourceImage" ref="cropCanvas" class="crop-preview" aria-label="裁剪预览" />
+          <div v-else class="project-preview"><FolderOpen :size="22" /><span>已打开工程网格</span></div>
           <p class="source-name" :title="sourceName">{{ sourceName }}</p>
+          <p v-if="error" class="error-message">{{ error }}</p>
 
           <div class="bead-field-row">
             <label>宽度 <input v-model.number="settings.columns" type="number" min="8" max="150" /></label>
@@ -360,6 +513,21 @@ onBeforeUnmount(() => {
             <span>亮度 <b>{{ settings.brightness }}%</b></span>
             <input v-model.number="settings.brightness" type="range" min="80" max="120" />
           </label>
+          <label class="bead-select">
+            <span>颜色数限制</span>
+            <select v-model.number="settings.maxColors">
+              <option :value="0">不限颜色</option>
+              <option :value="10">最多 10 色</option>
+              <option :value="20">最多 20 色</option>
+              <option :value="30">最多 30 色</option>
+              <option :value="40">最多 40 色</option>
+              <option :value="60">最多 60 色</option>
+            </select>
+          </label>
+          <div class="bead-optimize-actions">
+            <button type="button" :disabled="!cells.length || !settings.maxColors" @click="enforceColorLimit"><Tags :size="14" /> 应用限色</button>
+            <button type="button" :disabled="!cells.length" @click="cleanSpeckles"><Sparkles :size="14" /> 去除杂点</button>
+          </div>
 
           <span class="bead-label">拼豆规格</span>
           <div class="bead-segmented">
@@ -372,7 +540,7 @@ onBeforeUnmount(() => {
               <option v-for="item in palettes" :key="item.id" :value="item.id">{{ item.name }}</option>
             </select>
           </label>
-          <button class="primary-button bead-generate" type="button" :disabled="busy" @click="generatePattern">
+          <button class="primary-button bead-generate" type="button" :disabled="busy || !sourceImage" @click="generatePattern">
             <Grid3X3 :size="16" /> {{ busy ? '生成中…' : '应用并重新生成' }}
           </button>
           <p class="palette-note">品牌色号来自社区校准数据；屏幕颜色与实物、批次可能存在差异。</p>
@@ -383,11 +551,15 @@ onBeforeUnmount(() => {
             <div class="bead-tool-group" aria-label="绘制工具">
               <button type="button" :class="{ active: activeTool === 'brush' }" title="画笔" @click="activeTool = 'brush'"><Paintbrush :size="17" /><span>画笔</span></button>
               <button type="button" :class="{ active: activeTool === 'eraser' }" title="橡皮擦" @click="activeTool = 'eraser'"><Eraser :size="17" /><span>擦除</span></button>
+              <button type="button" :class="{ active: activeTool === 'bucket' }" title="填充连续区域" @click="activeTool = 'bucket'"><PaintBucket :size="17" /><span>油漆桶</span></button>
+              <button type="button" :class="{ active: activeTool === 'rectangle' }" title="拖动填充矩形" @click="activeTool = 'rectangle'"><Square :size="17" /><span>矩形</span></button>
+              <button type="button" :class="{ active: activeTool === 'select' }" title="拖动选择区域，镜像操作将只作用于选区" @click="activeTool = 'select'"><BoxSelect :size="17" /><span>选区</span></button>
+              <button type="button" :class="{ active: activeTool === 'replace' }" title="点击一种现有颜色，将其全部替换成当前选中色" @click="activeTool = 'replace'"><ReplaceAll :size="17" /><span>替换</span></button>
               <button type="button" :class="{ active: activeTool === 'picker' }" title="吸色" @click="activeTool = 'picker'"><Pipette :size="17" /><span>吸色</span></button>
             </div>
             <div class="bead-tool-group compact">
-              <button type="button" :disabled="!canUndo" title="撤销" @click="undo"><Undo :size="17" /></button>
-              <button type="button" :disabled="!canRedo" title="重做" @click="redo"><Redo :size="17" /></button>
+              <button type="button" :disabled="!canUndo" :title="`撤销（${past.length} 步历史）`" @click="undo"><Undo :size="17" /></button>
+              <button type="button" :disabled="!canRedo" :title="`重做（${future.length} 步历史）`" @click="redo"><Redo :size="17" /></button>
             </div>
             <label class="canvas-zoom">缩放 <input v-model.number="canvasCellSize" type="range" min="4" max="25" /></label>
             <button class="fit-button" type="button" title="适应画布" @click="fitCanvas"><Fit :size="15" /> 适应</button>
@@ -396,6 +568,18 @@ onBeforeUnmount(() => {
               <button type="button" :class="{ active: previewMode === 'bead' }" @click="previewMode = 'bead'">拼豆</button>
             </div>
             <button class="grid-toggle" type="button" :class="{ active: showGrid }" @click="showGrid = !showGrid"><Grid3X3 :size="16" /> 网格</button>
+          </div>
+
+          <div class="bead-editor-actions">
+            <span>对称编辑</span>
+            <button type="button" :class="{ active: symmetry.horizontal }" @click="symmetry.horizontal = !symmetry.horizontal"><FlipHorizontal :size="14" /> 左右</button>
+            <button type="button" :class="{ active: symmetry.vertical }" @click="symmetry.vertical = !symmetry.vertical"><FlipVertical :size="14" /> 上下</button>
+            <i />
+            <span>{{ selection ? '镜像选区' : '镜像全图' }}</span>
+            <button type="button" @click="mirrorPattern('horizontal')"><FlipHorizontal :size="14" /> 左右</button>
+            <button type="button" @click="mirrorPattern('vertical')"><FlipVertical :size="14" /> 上下</button>
+            <button v-if="selection" type="button" @click="selection = null">取消选区</button>
+            <button class="code-toggle" type="button" :class="{ active: showCodes }" title="单格放大到 12px 以上时显示色号" @click="showCodes = !showCodes"><Tags :size="14" /> 格内色号</button>
           </div>
 
           <div ref="canvasViewport" class="bead-canvas-viewport">
@@ -414,6 +598,7 @@ onBeforeUnmount(() => {
             <span>{{ gridSize.columns }} × {{ gridSize.rows }} 颗</span>
             <span>{{ physicalSize.width }} × {{ physicalSize.height }} cm</span>
             <span>{{ beadCount }} 颗豆</span>
+            <span>历史 {{ past.length }} / {{ future.length }}</span>
             <span><i class="selected-swatch" :style="{ background: selected?.hex }" />{{ selected?.name }}</span>
           </div>
         </section>
@@ -432,18 +617,44 @@ onBeforeUnmount(() => {
             ><span /></button>
           </div>
 
-          <div class="bead-usage">
-            <button v-for="item in statistics" :key="item.id" type="button" @click="chooseColor(item.index)">
-              <i :style="{ background: item.hex }" />
-              <span><b>{{ item.name }}</b><small>{{ item.code }}</small></span>
-              <strong>{{ item.count }}</strong>
-            </button>
+          <div class="bead-materials">
+            <div class="material-summary" :class="{ complete: shortageTotal === 0 }">
+              <ListChecks :size="14" />
+              <span>{{ shortageTotal ? `按库存还缺 ${shortageTotal} 颗` : '库存数量充足' }}</span>
+            </div>
+            <div class="bead-usage">
+              <div v-for="item in statistics" :key="item.id" class="bead-usage-row" role="button" tabindex="0" @click="chooseColor(item.index)" @keydown.enter="chooseColor(item.index)">
+                <i :style="{ background: item.hex }" />
+                <span><b>{{ item.name }}</b><small>{{ item.code }}</small></span>
+                <strong title="需要数量">需 {{ item.count }}</strong>
+                <label title="输入已有库存" @click.stop>有 <input v-model.number="inventory[item.id]" type="number" min="0" /></label>
+                <em v-if="item.count > (Number(inventory[item.id]) || 0)">缺 {{ item.count - (Number(inventory[item.id]) || 0) }}</em>
+                <em v-else class="enough">足够</em>
+              </div>
+            </div>
+
+            <details v-if="mergeSuggestions.length" class="merge-suggestions">
+              <summary>颜色合并建议 <b>{{ mergeSuggestions.length }}</b></summary>
+              <button v-for="suggestion in mergeSuggestions" :key="`${suggestion.source.id}-${suggestion.target.id}`" type="button" @click="applyMerge(suggestion)">
+                <i :style="{ background: suggestion.source.hex }" />{{ suggestion.source.code }}
+                <span>→</span>
+                <i :style="{ background: suggestion.target.hex }" />{{ suggestion.target.code }}
+                <small>ΔE {{ suggestion.distance.toFixed(1) }}</small>
+              </button>
+            </details>
           </div>
 
           <div class="bead-export">
             <span class="bead-label">导出图纸</span>
             <button type="button" @click="exportPng(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.png`, { paletteName: palette.name })"><FileImage :size="16" /> PNG 图片</button>
-            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`, { paletteName: palette.name })"><FileText :size="16" /> PDF 图纸</button>
+            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`, { paletteName: palette.name, boardSize: 29 })"><FileText :size="16" /> PDF（29×29 分页）</button>
+            <button type="button" @click="exportMaterials"><ListChecks :size="16" /> 材料清单 CSV</button>
+            <span class="bead-label project-label">工程文件</span>
+            <div class="project-actions">
+              <button type="button" @click="saveProject"><Save :size="15" /> 保存</button>
+              <button type="button" @click="projectInput?.click()"><FolderOpen :size="15" /> 打开</button>
+            </div>
+            <input ref="projectInput" type="file" accept=".sakurabeads,application/json" hidden @change="openProject" />
           </div>
           <p class="local-processing"><ShieldCheck :size="14" /> 图片与编辑数据仅保留在当前页面</p>
         </aside>

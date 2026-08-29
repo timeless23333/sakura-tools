@@ -1,4 +1,5 @@
 import { nearestPaletteIndex, preparePalette } from './color.js'
+import { reducePaletteUsage } from './editor.js'
 
 export async function decodeImage(file) {
   if ('createImageBitmap' in window) {
@@ -97,7 +98,7 @@ export function quantizeImage(image, options, paletteColors) {
       ? -1
       : nearestPaletteIndex({ r: adjusted[offset], g: adjusted[offset + 1], b: adjusted[offset + 2] }, prepared)
   }
-  return cells
+  return reducePaletteUsage(cells, paletteColors, options.maxColors)
 }
 
 function adjustPixels(pixels, columns, rows, options) {

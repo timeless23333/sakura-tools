@@ -9,10 +9,12 @@
 - `core/communityPalettes.js`：Hama Midi 92 色、Artkal C 174 色和 Artkal S 199 色社区校准数据。
 - `core/color.js`：sRGB → CIE Lab 与最近色匹配。
 - `core/image.js`：图片解码、焦点裁剪与网格量化。
-- `core/render.js`：Canvas 拼豆/网格渲染和颜色用量统计。
+- `core/editor.js`：填充、选区、镜像、对称、限色、去杂点和颜色合并算法。
+- `core/project.js`：工程文件校验、保存以及材料清单生成。
+- `core/render.js`：Canvas 拼豆/网格/色号/选区渲染和颜色用量统计。
 - `core/export.js`：带坐标尺、格内色号与用量统计的 PNG，以及可读性优先的分页 PDF 导出。
 - `components/tools/PixelBeadsTool.vue`：Vue 交互状态，不承载颜色算法。
 
 ## 后续扩展
 
-新增品牌时，在 `palettes.js` 注册同构色板即可。颜色量化、去杂色、对称轴与图层应分别新增独立 core 模块，不把算法塞回 Vue 组件。工程保存应序列化网格尺寸、色板 ID、颜色索引、图层和编辑参数，不保存原始图片，除非用户明确选择嵌入。
+新增品牌时，在 `palettes.js` 注册同构色板即可。图层等后续能力应继续新增独立 core 模块，不把算法塞回 Vue 组件。工程文件目前保存网格、色板、生成参数与库存，不嵌入原始图片。
