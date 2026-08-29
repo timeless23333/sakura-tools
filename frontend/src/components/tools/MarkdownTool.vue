@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import 'katex/dist/katex.min.css'
 import {
   BoldIcon as Bold,
   Code2Icon as Code,
@@ -20,6 +21,7 @@ import {
 import { markdownTitle, renderMarkdown } from '../../features/markdown/core/markdown'
 
 const STORAGE_KEY = 'sakura-tools-markdown-draft-v1'
+const SPLIT_KEY = 'sakura-tools-markdown-split-v1'
 const defaultDocument = `# 一份新的 Markdown 文档
 
 在左侧开始写作，右侧会实时生成适合阅读与打印的预览。
@@ -47,9 +49,14 @@ const source = ref(defaultDocument)
 const viewMode = ref('split')
 const editor = ref(null)
 const preview = ref(null)
+const workbench = ref(null)
 const fileInput = ref(null)
 const fileName = ref('')
 const status = ref('自动保存已开启')
+const splitPercent = ref(50)
+const resizing = ref(false)
+let scrollOrigin = ''
+let scrollUnlockFrame = 0
 
 const rendered = computed(() => renderMarkdown(source.value))
 const title = computed(() => markdownTitle(source.value))
@@ -172,12 +179,54 @@ function handleEditorKeydown(event) {
   }
 }
 
+function syncScroll(sourcePane, targetPane, origin) {
+  if (!sourcePane || !targetPane || viewMode.value !== 'split') return
+  if (scrollOrigin && scrollOrigin !== origin) return
+  scrollOrigin = origin
+  const maximum = sourcePane.scrollHeight - sourcePane.clientHeight
+  const progress = maximum > 0 ? sourcePane.scrollTop / maximum : 0
+  targetPane.scrollTop = progress * Math.max(0, targetPane.scrollHeight - targetPane.clientHeight)
+  if (scrollUnlockFrame) cancelAnimationFrame(scrollUnlockFrame)
+  scrollUnlockFrame = requestAnimationFrame(() => { scrollOrigin = '' })
+}
+
 function syncPreviewScroll(event) {
-  if (!preview.value || viewMode.value !== 'split') return
-  const textarea = event.currentTarget
-  const maximum = textarea.scrollHeight - textarea.clientHeight
-  const progress = maximum > 0 ? textarea.scrollTop / maximum : 0
-  preview.value.scrollTop = progress * Math.max(0, preview.value.scrollHeight - preview.value.clientHeight)
+  syncScroll(event.currentTarget, preview.value, 'editor')
+}
+
+function syncEditorScroll(event) {
+  syncScroll(event.currentTarget, editor.value, 'preview')
+}
+
+function resizeSplit(event) {
+  if (!resizing.value || !workbench.value) return
+  const rect = workbench.value.getBoundingClientRect()
+  splitPercent.value = Math.max(24, Math.min(76, ((event.clientX - rect.left) / rect.width) * 100))
+}
+
+function endResize() {
+  if (!resizing.value) return
+  resizing.value = false
+  document.body.classList.remove('markdown-resizing')
+  localStorage.setItem(SPLIT_KEY, String(splitPercent.value))
+  window.removeEventListener('pointermove', resizeSplit)
+  window.removeEventListener('pointerup', endResize)
+}
+
+function beginResize(event) {
+  if (viewMode.value !== 'split') return
+  event.preventDefault()
+  resizing.value = true
+  document.body.classList.add('markdown-resizing')
+  window.addEventListener('pointermove', resizeSplit)
+  window.addEventListener('pointerup', endResize)
+}
+
+function resizeWithKeyboard(event) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
+  event.preventDefault()
+  if (event.key === 'Home') splitPercent.value = 50
+  else splitPercent.value = Math.max(24, Math.min(76, splitPercent.value + (event.key === 'ArrowLeft' ? -2 : 2)))
 }
 
 watch(source, (value) => {
@@ -192,11 +241,20 @@ watch(source, (value) => {
 onMounted(() => {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved !== null) source.value = saved
+  const savedSplit = Number(localStorage.getItem(SPLIT_KEY))
+  if (savedSplit >= 24 && savedSplit <= 76) splitPercent.value = savedSplit
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', resizeSplit)
+  window.removeEventListener('pointerup', endResize)
+  document.body.classList.remove('markdown-resizing')
+  if (scrollUnlockFrame) cancelAnimationFrame(scrollUnlockFrame)
 })
 </script>
 
 <template>
-  <div class="markdown-studio" :class="`mode-${viewMode}`">
+  <div class="markdown-studio" :class="[`mode-${viewMode}`, { resizing }]">
     <header class="markdown-commandbar">
       <div class="markdown-format-tools" aria-label="Markdown 格式工具">
         <button type="button" title="粗体 Ctrl+B" @click="format('bold')"><Bold :size="15" /></button>
@@ -225,7 +283,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <main class="markdown-workbench">
+    <main ref="workbench" class="markdown-workbench" :style="{ '--editor-percent': `${splitPercent}%` }">
       <section class="markdown-editor-pane">
         <div class="markdown-pane-heading">
           <span>MARKDOWN</span>
@@ -241,7 +299,19 @@ onMounted(() => {
         />
       </section>
 
-      <section ref="preview" class="markdown-preview-pane">
+      <div
+        class="markdown-resizer"
+        role="separator"
+        aria-label="调整编辑区与预览区宽度"
+        aria-orientation="vertical"
+        :aria-valuenow="Math.round(splitPercent)"
+        tabindex="0"
+        @pointerdown="beginResize"
+        @dblclick="splitPercent = 50"
+        @keydown="resizeWithKeyboard"
+      ><i /></div>
+
+      <section ref="preview" class="markdown-preview-pane" @scroll="syncEditorScroll">
         <div class="markdown-pane-heading">
           <span>PREVIEW</span>
           <small>约 {{ readingMinutes }} 分钟阅读</small>
@@ -253,7 +323,7 @@ onMounted(() => {
     <footer class="markdown-statusbar">
       <span>{{ fileName || `${title}.md` }}</span>
       <span>{{ status }}</span>
-      <span>原始 HTML 已禁用</span>
+      <span>仅允许安全表格 HTML</span>
     </footer>
   </div>
 </template>

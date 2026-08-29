@@ -257,10 +257,15 @@ a.tool-card:hover { z-index: 1; background: var(--surface); transform: translate
 .markdown-file-actions { gap: 5px; }
 .markdown-file-actions button { border: 1px solid var(--line); }
 .markdown-file-actions .pdf-button { color: var(--surface); border-color: var(--ink); background: var(--ink); }
-.markdown-workbench { height: min(760px, calc(100vh - 250px)); min-height: 580px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: var(--paper-deep); }
+.markdown-workbench { height: min(940px, calc(100vh - 150px)); min-height: 720px; display: grid; grid-template-columns: minmax(0, var(--editor-percent, 50%)) 7px minmax(0, 1fr); background: var(--paper-deep); }
 .markdown-editor-pane, .markdown-preview-pane { min-width: 0; min-height: 0; }
-.markdown-editor-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--surface); }
+.markdown-editor-pane { display: flex; flex-direction: column; background: var(--surface); }
 .markdown-preview-pane { overflow: auto; background: var(--paper-deep); }
+.markdown-resizer { z-index: 3; position: relative; display: grid; place-items: center; border-right: 1px solid var(--line); border-left: 1px solid var(--line); outline: 0; background: var(--surface); cursor: col-resize; touch-action: none; }
+.markdown-resizer::before { content: ''; position: absolute; inset: 0 -4px; }
+.markdown-resizer i { width: 2px; height: 44px; border-radius: 2px; background: var(--line-dark); transition: height 140ms ease, background 140ms ease; }
+.markdown-resizer:hover i, .markdown-resizer:focus i, .markdown-studio.resizing .markdown-resizer i { height: 72px; background: var(--ochre); }
+body.markdown-resizing { cursor: col-resize; user-select: none; }
 .markdown-pane-heading { position: sticky; z-index: 2; top: 0; min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; border-bottom: 1px solid var(--line); color: var(--muted); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(8px); font: 500 9px ui-monospace, Consolas, monospace; letter-spacing: .1em; }
 .markdown-pane-heading small { overflow: hidden; font: 9px ui-monospace, Consolas, monospace; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
 .markdown-editor-pane textarea { flex: 1; width: 100%; min-height: 0; resize: none; padding: 27px 30px 70px; border: 0; outline: 0; color: var(--ink); background: var(--surface); font: 13px/1.85 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
@@ -292,10 +297,15 @@ a.tool-card:hover { z-index: 1; background: var(--surface); transform: translate
 .markdown-preview th, .markdown-preview td { padding: 9px 11px; border: 1px solid #d7d1c8; text-align: left; }
 .markdown-preview th { color: #27231f; background: #f0ece5; font-weight: 700; }
 .markdown-preview tr:nth-child(even) td { background: #faf8f4; }
+.markdown-preview .math-display { max-width: 100%; margin: 24px 0; overflow-x: auto; overflow-y: hidden; padding: 6px 2px; text-align: center; }
+.markdown-preview .katex { font-size: 1.05em; }
+.markdown-preview .math-display .katex { font-size: 1.16em; }
+.markdown-preview .html-table table { width: max-content; min-width: 100%; }
 .markdown-statusbar { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 12px; border-top: 1px solid var(--line); color: var(--muted); background: var(--surface); font: 9px ui-monospace, Consolas, monospace; }
 .markdown-statusbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .markdown-studio.mode-edit .markdown-workbench, .markdown-studio.mode-preview .markdown-workbench { grid-template-columns: minmax(0, 1fr); }
 .markdown-studio.mode-edit .markdown-preview-pane, .markdown-studio.mode-preview .markdown-editor-pane { display: none; }
+.markdown-studio.mode-edit .markdown-resizer, .markdown-studio.mode-preview .markdown-resizer { display: none; }
 .markdown-studio.mode-edit .markdown-editor-pane { border-right: 0; }
 
 /* Pixel bead studio */
@@ -433,6 +443,7 @@ a.tool-card:hover { z-index: 1; background: var(--surface); transform: translate
   .markdown-view-toggle { margin-left: 0; }
   .markdown-file-actions { margin-left: auto; }
   .markdown-workbench { height: auto; min-height: 0; grid-template-columns: 1fr; }
+  .markdown-resizer { display: none; }
   .markdown-studio.mode-split .markdown-editor-pane { min-height: 480px; border-right: 0; border-bottom: 1px solid var(--line); }
   .markdown-studio.mode-split .markdown-preview-pane { max-height: 720px; }
 }
@@ -490,7 +501,7 @@ a.tool-card:hover { z-index: 1; background: var(--surface); transform: translate
   @page { size: A4; margin: 18mm 17mm 20mm; }
   html, body { min-width: 0; color: #292621; background: #fff !important; }
   body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .site-header, .site-footer, .back-link, .workspace-header, .markdown-commandbar, .markdown-editor-pane, .markdown-pane-heading, .markdown-statusbar { display: none !important; }
+  .site-header, .site-footer, .back-link, .workspace-header, .markdown-commandbar, .markdown-editor-pane, .markdown-resizer, .markdown-pane-heading, .markdown-statusbar { display: none !important; }
   .site-shell, .site-shell.site-shell-wide { width: 100%; margin: 0; }
   .workspace, .markdown-studio, .markdown-workbench, .markdown-preview-pane { width: 100%; height: auto; min-height: 0; display: block !important; margin: 0; padding: 0; overflow: visible; border: 0; background: #fff; box-shadow: none; }
   .markdown-print-root { width: 100%; min-height: 0; margin: 0; padding: 0; color: #292621; background: #fff; box-shadow: none; }
@@ -498,7 +509,11 @@ a.tool-card:hover { z-index: 1; background: var(--surface); transform: translate
   .markdown-preview h2 { font-size: 18pt; }
   .markdown-preview h3 { font-size: 14pt; }
   .markdown-preview a { color: #2d6889; }
-  .markdown-preview pre, .markdown-preview blockquote, .markdown-preview table, .markdown-preview img { break-inside: avoid-page; }
+  .markdown-preview pre, .markdown-preview blockquote, .markdown-preview img, .markdown-preview .math-display { break-inside: avoid-page; }
+  .markdown-preview .table-wrap { overflow: visible; break-inside: auto; }
+  .markdown-preview table { width: 100% !important; break-inside: auto; font-size: 9pt; }
+  .markdown-preview thead { display: table-header-group; }
+  .markdown-preview tr { break-inside: avoid-page; }
   .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { break-after: avoid-page; }
 }
 
