@@ -9,11 +9,12 @@ import TimestampTool from '../components/tools/TimestampTool.vue'
 import PasswordTool from '../components/tools/PasswordTool.vue'
 import PixelBeadsTool from '../components/tools/PixelBeadsTool.vue'
 import TranslateTool from '../components/tools/TranslateTool.vue'
+import ImageTool from '../components/tools/ImageTool.vue'
 
 const route = useRoute()
 const tool = computed(() => findTool(route.params.slug))
 const MarkdownTool = defineAsyncComponent(() => import('../components/tools/MarkdownTool.vue'))
-const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, translate: TranslateTool, markdown: MarkdownTool, 'pixel-beads': PixelBeadsTool }
+const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, translate: TranslateTool, markdown: MarkdownTool, image: ImageTool, 'pixel-beads': PixelBeadsTool }
 const toolComponent = computed(() => components[route.params.slug])
 
 onMounted(() => {
