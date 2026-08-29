@@ -1,3 +1,5 @@
+import { mardPalette } from './mardPalette.js'
+
 // Perler 官方色名参考其公开的 2025 Bead Color Reference。
 // hex 是用于屏幕预览与近似匹配的数字参考，不代表实物在所有光照与批次下的精确颜色。
 export const perlerPalette = {
@@ -8,11 +10,13 @@ export const perlerPalette = {
   colors: [
     ['white', 'White', '白色', '#F4F4EF'],
     ['cream', 'Creme', '奶油色', '#F1E4C2'],
+    ['toasted-marshmallow', 'Toasted Marshmallow', '烤棉花糖', '#D8C5B4'],
     ['sand', 'Sand', '沙色', '#D8B58A'],
     ['tan', 'Tan', '棕褐色', '#B8875E'],
     ['light-brown', 'Light Brown', '浅棕色', '#9A6547'],
     ['brown', 'Brown', '棕色', '#613E2C'],
     ['dark-brown', 'Dark Brown', '深棕色', '#3D2924'],
+    ['apricot', 'Apricot', '杏色', '#F3C3A5'],
     ['peach', 'Peach', '蜜桃色', '#F3B38F'],
     ['blush', 'Blush', '腮红色', '#ED927E'],
     ['light-pink', 'Light Pink', '浅粉色', '#F3B7CD'],
@@ -24,9 +28,11 @@ export const perlerPalette = {
     ['cranapple', 'Cranapple', '蔓越莓红', '#9D2735'],
     ['hot-coral', 'Hot Coral', '珊瑚红', '#F06055'],
     ['rust', 'Rust', '铁锈红', '#A9472D'],
+    ['brick', 'Brick', '砖红色', '#994D3A'],
     ['orange', 'Orange', '橙色', '#F37932'],
     ['cheddar', 'Cheddar', '切达橙', '#F5A623'],
     ['butterscotch', 'Butterscotch', '奶糖色', '#D88B2C'],
+    ['rich-butter', 'Rich Butter', '浓黄油色', '#EBC65E'],
     ['yellow', 'Yellow', '黄色', '#F5D547'],
     ['pastel-yellow', 'Pastel Yellow', '粉彩黄', '#F5E88A'],
     ['prickly-pear', 'Prickly Pear', '仙人掌黄绿', '#C8D746'],
@@ -37,9 +43,11 @@ export const perlerPalette = {
     ['shamrock', 'Shamrock', '三叶草绿', '#16845B'],
     ['dark-green', 'Dark Green', '深绿色', '#236044'],
     ['evergreen', 'Evergreen', '常青绿', '#194638'],
+    ['sage', 'Sage', '鼠尾草绿', '#94A58C'],
     ['parrot-green', 'Parrot Green', '鹦鹉绿', '#31A88A'],
     ['toothpaste', 'Toothpaste', '薄荷色', '#7DCEBE'],
     ['turquoise', 'Turquoise', '青绿色', '#27A8B5'],
+    ['lagoon', 'Lagoon', '潟湖蓝', '#268F91'],
     ['pastel-blue', 'Pastel Blue', '粉彩蓝', '#A7D7E8'],
     ['light-blue', 'Light Blue', '浅蓝色', '#5CB9DD'],
     ['periwinkle-blue', 'Periwinkle Blue', '长春花蓝', '#7587C9'],
@@ -51,13 +59,15 @@ export const perlerPalette = {
     ['purple', 'Purple', '紫色', '#76519B'],
     ['magenta', 'Magenta', '品红色', '#B63F8D'],
     ['light-grey', 'Light Grey', '浅灰色', '#C8C8C2'],
+    ['mist', 'Mist', '雾灰色', '#AEB8B5'],
     ['grey', 'Grey', '灰色', '#858681'],
+    ['stone', 'Stone', '石色', '#77756F'],
     ['dark-grey', 'Dark Grey', '深灰色', '#50524F'],
     ['black', 'Black', '黑色', '#242424'],
   ].map(([id, code, name, hex]) => ({ id, code, name, hex })),
 }
 
-export const palettes = [perlerPalette]
+export const palettes = [mardPalette, perlerPalette]
 
 export function getPalette(id) {
   return palettes.find((palette) => palette.id === id) || palettes[0]

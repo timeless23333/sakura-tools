@@ -37,6 +37,10 @@ const settings = reactive({
   zoom: 1,
   focusX: 50,
   focusY: 50,
+  detail: 32,
+  saturation: 106,
+  contrast: 104,
+  brightness: 100,
   beadSize: 5,
   paletteId: palettes[0].id,
 })
@@ -44,6 +48,7 @@ const activeTool = ref('brush')
 const selectedColor = ref(0)
 const canvasCellSize = ref(16)
 const showGrid = ref(true)
+const previewMode = ref('pixel')
 const past = ref([])
 const future = ref([])
 let strokeCells = null
@@ -132,6 +137,7 @@ function renderEditor() {
   drawBeadGrid(beadCanvas.value, cells.value, gridSize.columns, gridSize.rows, palette.value.colors, {
     cellSize: canvasCellSize.value,
     showGrid: showGrid.value,
+    mode: previewMode.value,
   })
 }
 
@@ -227,7 +233,10 @@ watch(
   () => [settings.columns, settings.rows, settings.zoom, settings.focusX, settings.focusY],
   () => nextTick(updateCropPreview),
 )
-watch([canvasCellSize, showGrid], () => nextTick(scheduleRender))
+watch(() => settings.paletteId, () => {
+  if (sourceImage.value) generatePattern()
+})
+watch([canvasCellSize, showGrid, previewMode], () => nextTick(scheduleRender))
 
 function onKeyboardShortcut(event) {
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') return
@@ -304,6 +313,24 @@ onBeforeUnmount(() => {
             <input v-model.number="settings.focusY" type="range" min="0" max="100" />
           </label>
 
+          <span class="bead-label">成像调整</span>
+          <label class="bead-range compact-range">
+            <span>细节增强 <b>{{ settings.detail }}</b></span>
+            <input v-model.number="settings.detail" type="range" min="0" max="80" />
+          </label>
+          <label class="bead-range compact-range">
+            <span>饱和度 <b>{{ settings.saturation }}%</b></span>
+            <input v-model.number="settings.saturation" type="range" min="70" max="140" />
+          </label>
+          <label class="bead-range compact-range">
+            <span>对比度 <b>{{ settings.contrast }}%</b></span>
+            <input v-model.number="settings.contrast" type="range" min="80" max="130" />
+          </label>
+          <label class="bead-range compact-range">
+            <span>亮度 <b>{{ settings.brightness }}%</b></span>
+            <input v-model.number="settings.brightness" type="range" min="80" max="120" />
+          </label>
+
           <span class="bead-label">拼豆规格</span>
           <div class="bead-segmented">
             <button type="button" :class="{ active: settings.beadSize === 5 }" @click="settings.beadSize = 5">5 mm</button>
@@ -318,7 +345,7 @@ onBeforeUnmount(() => {
           <button class="primary-button bead-generate" type="button" :disabled="busy" @click="generatePattern">
             <Grid3X3 :size="16" /> {{ busy ? '生成中…' : '应用并重新生成' }}
           </button>
-          <p class="palette-note">色名参考品牌公开色卡；屏幕颜色与实物可能存在差异。</p>
+          <p class="palette-note">MARD 色号来自 MIT 社区校准数据；屏幕颜色与实物、批次可能存在差异。</p>
         </aside>
 
         <section class="bead-editor-panel">
@@ -333,6 +360,10 @@ onBeforeUnmount(() => {
               <button type="button" :disabled="!canRedo" title="重做" @click="redo"><Redo :size="17" /></button>
             </div>
             <label class="canvas-zoom">缩放 <input v-model.number="canvasCellSize" type="range" min="9" max="25" /></label>
+            <div class="preview-toggle" aria-label="预览样式">
+              <button type="button" :class="{ active: previewMode === 'pixel' }" @click="previewMode = 'pixel'">色块</button>
+              <button type="button" :class="{ active: previewMode === 'bead' }" @click="previewMode = 'bead'">拼豆</button>
+            </div>
             <button class="grid-toggle" type="button" :class="{ active: showGrid }" @click="showGrid = !showGrid"><Grid3X3 :size="16" /> 网格</button>
           </div>
 
@@ -380,8 +411,8 @@ onBeforeUnmount(() => {
 
           <div class="bead-export">
             <span class="bead-label">导出图纸</span>
-            <button type="button" @click="exportPng(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.png`)"><FileImage :size="16" /> PNG 图片</button>
-            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`)"><FileText :size="16" /> PDF 图纸</button>
+            <button type="button" @click="exportPng(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.png`, { mode: previewMode })"><FileImage :size="16" /> PNG 图片</button>
+            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`, { mode: previewMode })"><FileText :size="16" /> PDF 图纸</button>
           </div>
           <p class="local-processing"><ShieldCheck :size="14" /> 图片与编辑数据仅保留在当前页面</p>
         </aside>

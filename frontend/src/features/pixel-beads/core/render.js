@@ -4,6 +4,7 @@ export function drawBeadGrid(canvas, cells, columns, rows, colors, options = {})
   if (!canvas || !cells?.length) return
   const cellSize = options.cellSize || 18
   const showGrid = options.showGrid !== false
+  const mode = options.mode || 'pixel'
   canvas.width = columns * cellSize
   canvas.height = rows * cellSize
   const context = canvas.getContext('2d')
@@ -18,7 +19,7 @@ export function drawBeadGrid(canvas, cells, columns, rows, colors, options = {})
       const { hex } = colors[colorIndex]
       const centerX = column * cellSize + cellSize / 2
       const centerY = row * cellSize + cellSize / 2
-      if (cellSize < 9) {
+      if (mode === 'pixel' || cellSize < 9) {
         context.fillStyle = hex
         context.fillRect(column * cellSize, row * cellSize, cellSize, cellSize)
       } else {

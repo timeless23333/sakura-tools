@@ -9,15 +9,20 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function exportCanvas(cells, columns, rows, colors) {
+function exportCanvas(cells, columns, rows, colors, options = {}) {
   const canvas = document.createElement('canvas')
   const cellSize = Math.max(16, Math.min(32, Math.floor(3200 / Math.max(columns, rows))))
-  drawBeadGrid(canvas, cells, columns, rows, colors, { cellSize, showGrid: true, background: '#f7f5f1' })
+  drawBeadGrid(canvas, cells, columns, rows, colors, {
+    cellSize,
+    showGrid: true,
+    background: '#f7f5f1',
+    mode: options.mode || 'pixel',
+  })
   return canvas
 }
 
-export function exportPng(cells, columns, rows, colors, filename = 'sakura-beads-pattern.png') {
-  exportCanvas(cells, columns, rows, colors).toBlob((blob) => {
+export function exportPng(cells, columns, rows, colors, filename = 'sakura-beads-pattern.png', options = {}) {
+  exportCanvas(cells, columns, rows, colors, options).toBlob((blob) => {
     if (blob) downloadBlob(blob, filename)
   }, 'image/png')
 }
@@ -38,8 +43,8 @@ function concatBytes(parts) {
   return result
 }
 
-export function exportPdf(cells, columns, rows, colors, filename = 'sakura-beads-pattern.pdf') {
-  const canvas = exportCanvas(cells, columns, rows, colors)
+export function exportPdf(cells, columns, rows, colors, filename = 'sakura-beads-pattern.pdf', options = {}) {
+  const canvas = exportCanvas(cells, columns, rows, colors, options)
   const jpeg = dataUrlBytes(canvas.toDataURL('image/jpeg', 0.94))
   const encoder = new TextEncoder()
   const landscape = columns > rows
