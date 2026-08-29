@@ -23,7 +23,7 @@ export const tools = [
   { slug: 'image', index: '07', name: '图片处理', summary: '本地裁剪、压缩并转换图片格式', category: '图像', icon: Image, color: 'green', ready: true },
   { slug: 'pdf', index: '08', name: 'PDF 工具', summary: '本地合并、拆分与整理 PDF 页面', category: '文档', icon: FileType2, color: 'red', ready: true },
   { slug: 'pixel-beads', index: '09', name: '像素拼豆图纸', summary: '照片转网格图纸，精准匹配拼豆色号', category: '图像', icon: Grid3X3, color: 'special', ready: true },
-  { slug: 'color', index: '10', name: '颜色工具', summary: '取色、转换与调色板生成', category: '开发', icon: Pipette, color: 'blue' },
+  { slug: 'color', index: '10', name: '颜色工具', summary: '取色、转换、配色与对比度检查', category: '开发', icon: Pipette, color: 'blue', ready: true },
 ]
 
 export const findTool = (slug) => tools.find((tool) => tool.slug === slug)

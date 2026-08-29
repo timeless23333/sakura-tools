@@ -49,7 +49,7 @@ var toolCatalog = []tool{
 	{Slug: "image", Name: "图片处理", Category: "图像", Ready: true},
 	{Slug: "pdf", Name: "PDF 工具", Category: "文档", Ready: true},
 	{Slug: "pixel-beads", Name: "像素拼豆图纸", Category: "图像", Ready: true},
-	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: false},
+	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: true},
 }
 
 func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service) http.Handler {
