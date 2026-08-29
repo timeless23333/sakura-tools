@@ -46,8 +46,8 @@ var toolCatalog = []tool{
 	{Slug: "password", Name: "随机密码", Category: "生活", Ready: true},
 	{Slug: "translate", Name: "在线翻译", Category: "文本", Ready: true},
 	{Slug: "markdown", Name: "Markdown 编辑器", Category: "文本", Ready: true},
-	{Slug: "image", Name: "图片处理", Category: "图像", Ready: false},
-	{Slug: "pdf", Name: "PDF 工具", Category: "文档", Ready: false},
+	{Slug: "image", Name: "图片处理", Category: "图像", Ready: true},
+	{Slug: "pdf", Name: "PDF 工具", Category: "文档", Ready: true},
 	{Slug: "pixel-beads", Name: "像素拼豆图纸", Category: "图像", Ready: true},
 	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: false},
 }

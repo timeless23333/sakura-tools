@@ -14,7 +14,8 @@ import ImageTool from '../components/tools/ImageTool.vue'
 const route = useRoute()
 const tool = computed(() => findTool(route.params.slug))
 const MarkdownTool = defineAsyncComponent(() => import('../components/tools/MarkdownTool.vue'))
-const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, translate: TranslateTool, markdown: MarkdownTool, image: ImageTool, 'pixel-beads': PixelBeadsTool }
+const PdfTool = defineAsyncComponent(() => import('../components/tools/PdfTool.vue'))
+const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, translate: TranslateTool, markdown: MarkdownTool, image: ImageTool, pdf: PdfTool, 'pixel-beads': PixelBeadsTool }
 const toolComponent = computed(() => components[route.params.slug])
 
 onMounted(() => {

@@ -21,7 +21,7 @@ export const tools = [
   { slug: 'translate', index: '05', name: '在线翻译', summary: '安全代理第三方服务，快速翻译多语言文本', category: '文本', icon: Languages, color: 'blue', ready: true },
   { slug: 'markdown', index: '06', name: 'Markdown 编辑器', summary: '实时预览并导出 Markdown 与 PDF 文档', category: '文本', icon: FileText, color: 'ochre', ready: true },
   { slug: 'image', index: '07', name: '图片处理', summary: '本地裁剪、压缩并转换图片格式', category: '图像', icon: Image, color: 'green', ready: true },
-  { slug: 'pdf', index: '08', name: 'PDF 工具', summary: '合并、拆分与页面整理', category: '文档', icon: FileType2, color: 'red' },
+  { slug: 'pdf', index: '08', name: 'PDF 工具', summary: '本地合并、拆分与整理 PDF 页面', category: '文档', icon: FileType2, color: 'red', ready: true },
   { slug: 'pixel-beads', index: '09', name: '像素拼豆图纸', summary: '照片转网格图纸，精准匹配拼豆色号', category: '图像', icon: Grid3X3, color: 'special', ready: true },
   { slug: 'color', index: '10', name: '颜色工具', summary: '取色、转换与调色板生成', category: '开发', icon: Pipette, color: 'blue' },
 ]
