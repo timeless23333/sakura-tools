@@ -6,7 +6,7 @@ import fufuLogo from './assets/fufu.png'
 
 const route = useRoute()
 const isDark = ref(false)
-const isWideWorkspace = computed(() => route.params.slug === 'pixel-beads')
+const isWideWorkspace = computed(() => ['pixel-beads', 'markdown'].includes(route.params.slug))
 
 onMounted(() => {
   const stored = localStorage.getItem('sakura-theme')

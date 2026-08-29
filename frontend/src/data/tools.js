@@ -19,7 +19,7 @@ export const tools = [
   { slug: 'timestamp', index: '03', name: '时间戳转换', summary: '时间戳与本地日期双向转换', category: '开发', icon: Clock3, color: 'ochre', ready: true },
   { slug: 'password', index: '04', name: '随机密码', summary: '在本地生成高强度随机密码', category: '生活', icon: KeyRound, color: 'green', ready: true },
   { slug: 'translate', index: '05', name: '在线翻译', summary: '快速翻译文本并保留原始格式', category: '文本', icon: Languages, color: 'blue' },
-  { slug: 'markdown', index: '06', name: 'Markdown 编辑器', summary: '实时预览与导出 Markdown 文档', category: '文本', icon: FileText, color: 'ochre' },
+  { slug: 'markdown', index: '06', name: 'Markdown 编辑器', summary: '实时预览并导出 Markdown 与 PDF 文档', category: '文本', icon: FileText, color: 'ochre', ready: true },
   { slug: 'image', index: '07', name: '图片处理', summary: '压缩、裁剪与格式转换', category: '图像', icon: Image, color: 'green' },
   { slug: 'pdf', index: '08', name: 'PDF 工具', summary: '合并、拆分与页面整理', category: '文档', icon: FileType2, color: 'red' },
   { slug: 'pixel-beads', index: '09', name: '像素拼豆图纸', summary: '照片转网格图纸，精准匹配拼豆色号', category: '图像', icon: Grid3X3, color: 'special', ready: true },
