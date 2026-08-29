@@ -1,9 +1,12 @@
 <script setup>
 import { GitForkIcon as GitFork, HeartIcon as Heart, MoonIcon as Moon, SunIcon as Sun } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import fufuLogo from './assets/fufu.png'
 
+const route = useRoute()
 const isDark = ref(false)
+const isWideWorkspace = computed(() => route.params.slug === 'pixel-beads')
 
 onMounted(() => {
   const stored = localStorage.getItem('sakura-theme')
@@ -19,7 +22,7 @@ function toggleDark() {
 </script>
 
 <template>
-  <div class="site-shell">
+  <div class="site-shell" :class="{ 'site-shell-wide': isWideWorkspace }">
     <header class="site-header">
       <router-link class="brand" to="/" aria-label="Sakura Tools 首页">
         <span class="brand-mark" aria-hidden="true">

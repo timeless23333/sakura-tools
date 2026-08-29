@@ -1,4 +1,5 @@
 import { mardPalette } from './mardPalette.js'
+import { artkalCPalette, artkalSPalette, hamaMidiPalette } from './communityPalettes.js'
 
 // Perler 官方色名参考其公开的 2025 Bead Color Reference。
 // hex 是用于屏幕预览与近似匹配的数字参考，不代表实物在所有光照与批次下的精确颜色。
@@ -67,7 +68,7 @@ export const perlerPalette = {
   ].map(([id, code, name, hex]) => ({ id, code, name, hex })),
 }
 
-export const palettes = [mardPalette, perlerPalette]
+export const palettes = [mardPalette, hamaMidiPalette, artkalCPalette, artkalSPalette, perlerPalette]
 
 export function getPalette(id) {
   return palettes.find((palette) => palette.id === id) || palettes[0]

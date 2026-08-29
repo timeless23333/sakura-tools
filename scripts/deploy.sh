@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${EUID}" -eq 0 ]]; then
+  echo "错误：请勿使用 sudo 运行部署脚本。"
+  echo "应用使用当前登录用户的 rootless Podman；请修复项目目录权限后直接运行：bash scripts/deploy.sh"
+  exit 1
+fi
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_INDEX="${PROJECT_DIR}/frontend/dist/index.html"
 BACKEND_BINARY="${PROJECT_DIR}/backend/server"

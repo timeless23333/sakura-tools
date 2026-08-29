@@ -8,6 +8,7 @@ import {
   FileTextIcon as FileText,
   Grid3X3Icon as Grid3X3,
   ImagePlusIcon as ImagePlus,
+  Maximize2Icon as Fit,
   PaintbrushIcon as Paintbrush,
   PipetteIcon as Pipette,
   Redo2Icon as Redo,
@@ -24,6 +25,7 @@ import { exportPdf, exportPng } from '../../features/pixel-beads/core/export'
 const fileInput = ref(null)
 const cropCanvas = ref(null)
 const beadCanvas = ref(null)
+const canvasViewport = ref(null)
 const sourceImage = shallowRef(null)
 const sourceName = ref('')
 const error = ref('')
@@ -54,6 +56,7 @@ const future = ref([])
 let strokeCells = null
 let lastCell = -1
 let renderFrame = 0
+const sizePresets = [29, 48, 52, 80, 100]
 
 const palette = computed(() => getPalette(settings.paletteId))
 const statistics = computed(() => countColors(cells.value, palette.value.colors))
@@ -69,6 +72,11 @@ const selected = computed(() => palette.value.colors[selectedColor.value])
 function clampSettings() {
   settings.columns = Math.max(8, Math.min(150, Number(settings.columns) || 48))
   settings.rows = Math.max(8, Math.min(150, Number(settings.rows) || 48))
+}
+
+function applySizePreset(size) {
+  settings.columns = size
+  settings.rows = size
 }
 
 async function receiveFile(file) {
@@ -127,7 +135,10 @@ function generatePattern() {
     selectedColor.value = nextCells.find((value) => value >= 0) ?? 0
     past.value = []
     future.value = []
-    nextTick(scheduleRender)
+    nextTick(() => {
+      fitCanvas()
+      scheduleRender()
+    })
   } finally {
     busy.value = false
   }
@@ -147,6 +158,16 @@ function scheduleRender() {
     renderFrame = 0
     renderEditor()
   })
+}
+
+function fitCanvas() {
+  if (!canvasViewport.value || !gridSize.columns || !gridSize.rows) return
+  const availableWidth = Math.max(240, canvasViewport.value.clientWidth - 56)
+  const availableHeight = Math.max(240, canvasViewport.value.clientHeight - 56)
+  canvasCellSize.value = Math.max(4, Math.min(25, Math.floor(Math.min(
+    availableWidth / gridSize.columns,
+    availableHeight / gridSize.rows,
+  ))))
 }
 
 function snapshot() {
@@ -300,6 +321,15 @@ onBeforeUnmount(() => {
             <span>×</span>
             <label>高度 <input v-model.number="settings.rows" type="number" min="8" max="150" /></label>
           </div>
+          <div class="bead-size-presets" aria-label="常用方形网格预设">
+            <button
+              v-for="size in sizePresets"
+              :key="size"
+              type="button"
+              :class="{ active: settings.columns === size && settings.rows === size }"
+              @click="applySizePreset(size)"
+            >{{ size }}</button>
+          </div>
           <label class="bead-range">
             <span>裁剪缩放 <b>{{ settings.zoom.toFixed(1) }}×</b></span>
             <input v-model.number="settings.zoom" type="range" min="1" max="3" step="0.1" />
@@ -345,7 +375,7 @@ onBeforeUnmount(() => {
           <button class="primary-button bead-generate" type="button" :disabled="busy" @click="generatePattern">
             <Grid3X3 :size="16" /> {{ busy ? '生成中…' : '应用并重新生成' }}
           </button>
-          <p class="palette-note">MARD 色号来自 MIT 社区校准数据；屏幕颜色与实物、批次可能存在差异。</p>
+          <p class="palette-note">品牌色号来自社区校准数据；屏幕颜色与实物、批次可能存在差异。</p>
         </aside>
 
         <section class="bead-editor-panel">
@@ -359,7 +389,8 @@ onBeforeUnmount(() => {
               <button type="button" :disabled="!canUndo" title="撤销" @click="undo"><Undo :size="17" /></button>
               <button type="button" :disabled="!canRedo" title="重做" @click="redo"><Redo :size="17" /></button>
             </div>
-            <label class="canvas-zoom">缩放 <input v-model.number="canvasCellSize" type="range" min="9" max="25" /></label>
+            <label class="canvas-zoom">缩放 <input v-model.number="canvasCellSize" type="range" min="4" max="25" /></label>
+            <button class="fit-button" type="button" title="适应画布" @click="fitCanvas"><Fit :size="15" /> 适应</button>
             <div class="preview-toggle" aria-label="预览样式">
               <button type="button" :class="{ active: previewMode === 'pixel' }" @click="previewMode = 'pixel'">色块</button>
               <button type="button" :class="{ active: previewMode === 'bead' }" @click="previewMode = 'bead'">拼豆</button>
@@ -367,7 +398,7 @@ onBeforeUnmount(() => {
             <button class="grid-toggle" type="button" :class="{ active: showGrid }" @click="showGrid = !showGrid"><Grid3X3 :size="16" /> 网格</button>
           </div>
 
-          <div class="bead-canvas-viewport">
+          <div ref="canvasViewport" class="bead-canvas-viewport">
             <canvas
               ref="beadCanvas"
               class="bead-canvas"
@@ -411,8 +442,8 @@ onBeforeUnmount(() => {
 
           <div class="bead-export">
             <span class="bead-label">导出图纸</span>
-            <button type="button" @click="exportPng(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.png`, { mode: previewMode })"><FileImage :size="16" /> PNG 图片</button>
-            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`, { mode: previewMode })"><FileText :size="16" /> PDF 图纸</button>
+            <button type="button" @click="exportPng(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.png`, { paletteName: palette.name })"><FileImage :size="16" /> PNG 图片</button>
+            <button type="button" @click="exportPdf(cells, gridSize.columns, gridSize.rows, palette.colors, `${fileBase()}.pdf`, { paletteName: palette.name })"><FileText :size="16" /> PDF 图纸</button>
           </div>
           <p class="local-processing"><ShieldCheck :size="14" /> 图片与编辑数据仅保留在当前页面</p>
         </aside>

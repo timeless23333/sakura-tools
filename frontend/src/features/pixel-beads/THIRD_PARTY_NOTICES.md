@@ -1,10 +1,10 @@
 # Third-party notices
 
-## BeadColors — MARD color dataset
+## BeadColors — MARD, Hama and Artkal color datasets
 
 Source: https://github.com/maxcleme/beadcolors
 
-The MARD reference codes and RGB values in core/mardPalette.js are derived from the BeadColors dataset and redistributed under the MIT License. Dataset contributor recorded upstream: Asher.
+The MARD reference codes and RGB values in `core/mardPalette.js`, plus the Hama Midi, Artkal C and Artkal S values in `core/communityPalettes.js`, are derived from the BeadColors dataset and redistributed under the MIT License. Individual measurement contributors remain recorded in the upstream CSV files.
 
 ```text
 MIT License
@@ -29,4 +29,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-

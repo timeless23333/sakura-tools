@@ -100,16 +100,22 @@ bash scripts/deploy.sh
 DEPLOY_GOARCH=arm64 bash scripts/deploy.sh
 ```
 
-安装宿主机 Nginx 配置前，先备份现有配置并检查是否已有同名 `server_name`：
+安装宿主机 Nginx 配置前，先备份并检查是否已有同名 `server_name`：
 
 ```bash
 sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup
+sudo grep -RIn "server_name.*sakurano.xyz" /etc/nginx
+```
+
+如果没有结果，才复制完整配置：
+
+```bash
 sudo cp nginx/sakurano.xyz.conf /etc/nginx/conf.d/sakurano.xyz.conf
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-如果 `sakurano.xyz` 已有 HTTPS server 块，只需把示例中的 `location /` 和 `location = /healthz` 合并到现有 HTTPS server 块；不要重复声明相同域名。确认新站可用后，旧目录 `/var/www/sakurano.xyz` 可以保留一段时间作为回滚备份。
+如果已有结果，不要复制新的同名配置。编辑原有 `server` 块，将 `nginx/sakurano.xyz.conf` 中的 `location /` 和 `location = /healthz` 合并进去，再运行 `nginx -t` 和 reload；HTTPS server 块也采用相同处理。确认新站可用后，旧目录 `/var/www/sakurano.xyz` 可以保留一段时间作为回滚备份。
 
 ## 日常发布
 
