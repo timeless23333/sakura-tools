@@ -133,13 +133,14 @@ function drawLegend(context, statistics, options) {
     context.lineWidth = 1
     context.fillRect(itemX, itemY, itemWidth, rowHeight - 8)
     context.strokeRect(itemX + 0.5, itemY + 0.5, itemWidth - 1, rowHeight - 9)
+    const swatchWidth = Math.min(58, Math.max(42, itemWidth * 0.28))
     context.fillStyle = item.hex
-    context.fillRect(itemX, itemY, Math.min(72, itemWidth * 0.34), rowHeight - 8)
+    context.fillRect(itemX, itemY, swatchWidth, rowHeight - 8)
     context.textBaseline = 'middle'
     context.font = '700 12px system-ui, sans-serif'
     context.fillStyle = readableText(item.hex)
     context.textAlign = 'center'
-    context.fillText(item.code, itemX + Math.min(72, itemWidth * 0.34) / 2, itemY + (rowHeight - 8) / 2)
+    context.fillText(item.code, itemX + swatchWidth / 2, itemY + (rowHeight - 8) / 2)
     context.textAlign = 'right'
     context.fillStyle = '#37332e'
     context.font = '600 12px system-ui, sans-serif'
@@ -157,7 +158,7 @@ function createCompleteSheet(cells, columns, rows, colors, options = {}) {
     subtitle: options.paletteName || '',
     footerHeight: 0,
   })
-  const legendColumns = pattern.width >= 1900 ? 6 : pattern.width >= 1300 ? 5 : 4
+  const legendColumns = Math.max(4, Math.min(16, Math.floor((pattern.width - 54) / 200)))
   const legendRows = Math.ceil(statistics.length / legendColumns)
   const legendTop = 82
   const legendHeight = Math.max(90, legendRows * 42)
@@ -190,7 +191,7 @@ function createCompleteSheet(cells, columns, rows, colors, options = {}) {
 
 function createLegendPages(cells, colors, paletteName = '') {
   const statistics = countColors(cells, colors)
-  const perPage = 48
+  const perPage = 96
   const pages = []
   for (let start = 0; start < statistics.length; start += perPage) {
     const items = statistics.slice(start, start + perPage)
@@ -209,7 +210,7 @@ function createLegendPages(cells, colors, paletteName = '') {
     context.font = '15px system-ui, sans-serif'
     context.fillStyle = '#6f6961'
     context.fillText(`${paletteName} · ${statistics.length} 种颜色`, 52, 101)
-    drawLegend(context, items, { x: 52, y: 142, width: 796, columns: 3, rowHeight: 64 })
+    drawLegend(context, items, { x: 52, y: 142, width: 796, columns: 4, rowHeight: 43 })
     context.textAlign = 'right'
     context.font = '14px system-ui, sans-serif'
     context.fillText(`统计表 ${Math.floor(start / perPage) + 1} / ${Math.ceil(statistics.length / perPage)}`, 848, 1230)
