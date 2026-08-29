@@ -7,10 +7,11 @@ import JsonTool from '../components/tools/JsonTool.vue'
 import Base64Tool from '../components/tools/Base64Tool.vue'
 import TimestampTool from '../components/tools/TimestampTool.vue'
 import PasswordTool from '../components/tools/PasswordTool.vue'
+import PixelBeadsTool from '../components/tools/PixelBeadsTool.vue'
 
 const route = useRoute()
 const tool = computed(() => findTool(route.params.slug))
-const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool }
+const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, 'pixel-beads': PixelBeadsTool }
 const toolComponent = computed(() => components[route.params.slug])
 
 onMounted(() => {

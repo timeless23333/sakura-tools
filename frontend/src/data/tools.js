@@ -22,7 +22,7 @@ export const tools = [
   { slug: 'markdown', index: '06', name: 'Markdown 编辑器', summary: '实时预览与导出 Markdown 文档', category: '文本', icon: FileText, color: 'ochre' },
   { slug: 'image', index: '07', name: '图片处理', summary: '压缩、裁剪与格式转换', category: '图像', icon: Image, color: 'green' },
   { slug: 'pdf', index: '08', name: 'PDF 工具', summary: '合并、拆分与页面整理', category: '文档', icon: FileType2, color: 'red' },
-  { slug: 'pixel-beads', index: '09', name: '像素拼豆图纸', summary: '照片转网格图纸，精准匹配拼豆色号', category: '图像', icon: Grid3X3, color: 'special' },
+  { slug: 'pixel-beads', index: '09', name: '像素拼豆图纸', summary: '照片转网格图纸，精准匹配拼豆色号', category: '图像', icon: Grid3X3, color: 'special', ready: true },
   { slug: 'color', index: '10', name: '颜色工具', summary: '取色、转换与调色板生成', category: '开发', icon: Pipette, color: 'blue' },
 ]
 
