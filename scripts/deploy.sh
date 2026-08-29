@@ -15,6 +15,20 @@ HTTP_PORT="${HTTP_PORT:-8088}"
 IMAGE_NAME="${IMAGE_NAME:-localhost/sakura-tools:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-sakura-tools-app}"
 VOLUME_NAME="${VOLUME_NAME:-sakura-tools-data}"
+ENV_FILE="${ENV_FILE:-${PROJECT_DIR}/.env}"
+CA_CERT_PATH="${CA_CERT_PATH:-/etc/pki/tls/certs/ca-bundle.crt}"
+
+RUN_ENV_ARGS=()
+if [[ -f "${ENV_FILE}" ]]; then
+  RUN_ENV_ARGS+=(--env-file "${ENV_FILE}")
+fi
+
+RUN_CA_ARGS=()
+if [[ -f "${CA_CERT_PATH}" ]]; then
+  RUN_CA_ARGS+=(-v "${CA_CERT_PATH}:/etc/ssl/certs/ca-certificates.crt:ro")
+else
+  echo "警告：未找到 CA 证书 ${CA_CERT_PATH}，在线翻译的 HTTPS 请求可能失败。"
+fi
 
 if [[ ! -f "${FRONTEND_INDEX}" ]]; then
   echo "错误：未找到 frontend/dist/index.html。"
@@ -46,7 +60,9 @@ podman run --pull=never -d \
   -e DATABASE_PATH=/app/data/sakura-tools.db \
   -e FRONTEND_DIR=/app/public \
   -e TZ=Asia/Shanghai \
+  "${RUN_ENV_ARGS[@]}" \
   -v "${VOLUME_NAME}:/app/data" \
+  "${RUN_CA_ARGS[@]}" \
   --read-only \
   --security-opt no-new-privileges \
   "${IMAGE_NAME}"

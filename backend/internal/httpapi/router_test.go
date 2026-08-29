@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/sakurano/sakura-tools/backend/internal/store"
+	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
 
 func TestHealthAndTools(t *testing.T) {
@@ -25,7 +26,7 @@ func TestHealthAndTools(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(frontendDir, "index.html"), []byte("<main>Sakura SPA</main>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", frontendDir)
+	router := NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", frontendDir, translation.New(translation.Config{}))
 
 	for _, path := range []string{"/api/v1/health", "/api/v1/tools"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -61,5 +62,33 @@ func TestHealthAndTools(t *testing.T) {
 	router.ServeHTTP(apiResponse, apiRequest)
 	if apiResponse.Code != http.StatusNotFound || strings.Contains(apiResponse.Body.String(), "Sakura SPA") {
 		t.Fatalf("unknown API route must not return the SPA")
+	}
+}
+
+func TestTranslateEndpoint(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"responseData": map[string]string{"translatedText": "你好"}})
+	}))
+	defer upstream.Close()
+
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	router := NewRouter(
+		s,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		"test",
+		t.TempDir(),
+		translation.New(translation.Config{MyMemoryEndpoint: upstream.URL}),
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/translate", strings.NewReader(`{"text":"hello","source_lang":"en","target_lang":"zh-CN"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "你好") {
+		t.Fatalf("expected translated response, got status %d and body %q", response.Code, response.Body.String())
 	}
 }

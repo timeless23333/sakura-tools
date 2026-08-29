@@ -1,23 +1,35 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
+	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
 
 var validSlug = regexp.MustCompile(`^[a-z0-9-]{1,48}$`)
 
 type handler struct {
-	store  *store.Store
-	logger *slog.Logger
+	store             *store.Store
+	logger            *slog.Logger
+	translator        *translation.Service
+	translationMu     sync.Mutex
+	translationLimits map[string]translationWindow
+}
+
+type translationWindow struct {
+	started time.Time
+	count   int
 }
 
 type tool struct {
@@ -32,27 +44,98 @@ var toolCatalog = []tool{
 	{Slug: "base64", Name: "Base64 编解码", Category: "开发", Ready: true},
 	{Slug: "timestamp", Name: "时间戳转换", Category: "开发", Ready: true},
 	{Slug: "password", Name: "随机密码", Category: "生活", Ready: true},
-	{Slug: "translate", Name: "在线翻译", Category: "文本", Ready: false},
-	{Slug: "markdown", Name: "Markdown 编辑器", Category: "文本", Ready: false},
+	{Slug: "translate", Name: "在线翻译", Category: "文本", Ready: true},
+	{Slug: "markdown", Name: "Markdown 编辑器", Category: "文本", Ready: true},
 	{Slug: "image", Name: "图片处理", Category: "图像", Ready: false},
 	{Slug: "pdf", Name: "PDF 工具", Category: "文档", Ready: false},
-	{Slug: "pixel-beads", Name: "像素拼豆图纸", Category: "图像", Ready: false},
+	{Slug: "pixel-beads", Name: "像素拼豆图纸", Category: "图像", Ready: true},
 	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: false},
 }
 
-func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string) http.Handler {
+func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service) http.Handler {
 	gin.SetMode(mode)
 	router := gin.New()
+	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		panic(err)
+	}
 	router.Use(gin.Recovery(), requestLogger(logger))
-	h := &handler{store: s, logger: logger}
+	h := &handler{store: s, logger: logger, translator: translator, translationLimits: make(map[string]translationWindow)}
 
 	api := router.Group("/api/v1")
 	api.GET("/health", h.health)
 	api.GET("/tools", h.tools)
 	api.POST("/events/tool-opened", h.toolOpened)
+	api.POST("/translate", h.translate)
 	router.NoRoute(spaHandler(frontendDir))
 
 	return router
+}
+
+var supportedLanguages = map[string]bool{
+	"auto": true, "zh-CN": true, "zh-TW": true, "en": true, "ja": true,
+	"ko": true, "fr": true, "de": true, "es": true, "ru": true,
+	"it": true, "pt": true, "ar": true, "nl": true, "pl": true,
+}
+
+func (h *handler) translate(c *gin.Context) {
+	if h.translator == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "translation service is unavailable"})
+		return
+	}
+	if !h.allowTranslation(c.ClientIP()) {
+		c.Header("Retry-After", "600")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many translation requests"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 24<<10)
+	var input struct {
+		Text       string `json:"text" binding:"required"`
+		SourceLang string `json:"source_lang" binding:"required"`
+		TargetLang string `json:"target_lang" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || !supportedLanguages[input.SourceLang] || !supportedLanguages[input.TargetLang] || input.TargetLang == "auto" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid translation request"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
+	defer cancel()
+	result, err := h.translator.Translate(ctx, translation.Request{
+		Text: input.Text, SourceLang: input.SourceLang, TargetLang: input.TargetLang,
+	})
+	if err != nil {
+		if errors.Is(err, translation.ErrInputTooLong) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "translation input is too long"})
+			return
+		}
+		h.logger.Warn("translation failed", "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "translation provider is unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *handler) allowTranslation(clientIP string) bool {
+	h.translationMu.Lock()
+	defer h.translationMu.Unlock()
+	now := time.Now()
+	if len(h.translationLimits) > 1000 {
+		for ip, item := range h.translationLimits {
+			if now.Sub(item.started) >= 10*time.Minute {
+				delete(h.translationLimits, ip)
+			}
+		}
+	}
+	window := h.translationLimits[clientIP]
+	if window.started.IsZero() || now.Sub(window.started) >= 10*time.Minute {
+		h.translationLimits[clientIP] = translationWindow{started: now, count: 1}
+		return true
+	}
+	if window.count >= 20 {
+		return false
+	}
+	window.count++
+	h.translationLimits[clientIP] = window
+	return true
 }
 
 func spaHandler(frontendDir string) gin.HandlerFunc {

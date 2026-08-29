@@ -12,6 +12,7 @@ import (
 	"github.com/sakurano/sakura-tools/backend/internal/config"
 	"github.com/sakurano/sakura-tools/backend/internal/httpapi"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
+	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
 
 func main() {
@@ -26,8 +27,13 @@ func main() {
 	defer db.Close()
 
 	server := &http.Server{
-		Addr:              cfg.Address,
-		Handler:           httpapi.NewRouter(db, logger, cfg.Mode, cfg.FrontendDir),
+		Addr: cfg.Address,
+		Handler: httpapi.NewRouter(db, logger, cfg.Mode, cfg.FrontendDir, translation.New(translation.Config{
+			DeepLAPIKey:      cfg.DeepLAPIKey,
+			DeepLEndpoint:    cfg.DeepLEndpoint,
+			MyMemoryEmail:    cfg.MyMemoryEmail,
+			MyMemoryEndpoint: cfg.MyMemoryEndpoint,
+		})),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

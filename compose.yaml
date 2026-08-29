@@ -12,8 +12,12 @@ services:
       DATABASE_PATH: /app/data/sakura-tools.db
       FRONTEND_DIR: /app/public
       TZ: Asia/Shanghai
+      DEEPL_API_KEY: ${DEEPL_API_KEY:-}
+      DEEPL_ENDPOINT: ${DEEPL_ENDPOINT:-}
+      MYMEMORY_EMAIL: ${MYMEMORY_EMAIL:-}
     volumes:
       - sakura_data:/app/data
+      - /etc/pki/tls/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
     read_only: true
     security_opt:
       - no-new-privileges:true

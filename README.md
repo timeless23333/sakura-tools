@@ -38,6 +38,22 @@ sakura-tools/
 
 增加工具时，优先把纯文本、编码、颜色等逻辑放在浏览器端；只有翻译、持久化、重型文件处理或需要隐藏密钥时才进入 Go API。这样可以降低服务器 CPU、内存与带宽压力。
 
+## 在线翻译配置
+
+在线翻译只通过本站 Go API 代理，不会把服务密钥发送给浏览器，也不会把翻译原文写入 SQLite 或应用日志。
+
+- 未配置密钥时使用 MyMemory 公共接口。其单段上限为 500 UTF-8 字节，后端会按句子自动拆分为最多 16 段。
+- 在 `.env` 中设置 `DEEPL_API_KEY` 后自动优先使用 DeepL。以 `:fx` 结尾的 Free API 密钥会使用 `api-free.deepl.com`。
+- `MYMEMORY_EMAIL` 是 MyMemory 对高频调用建议提供的联系邮箱，可留空。
+
+```dotenv
+DEEPL_API_KEY=
+DEEPL_ENDPOINT=
+MYMEMORY_EMAIL=
+```
+
+部署脚本会自动读取项目根目录的 `.env`，并将宿主机 CA 证书只读挂载进 scratch 容器，以便 Go 后端发起 HTTPS 请求。文本会发送给所选第三方翻译服务，因此翻译页面不会标记为“本地处理”。
+
 ## 本地开发
 
 要求：Node.js 22+、Go 1.25+。
