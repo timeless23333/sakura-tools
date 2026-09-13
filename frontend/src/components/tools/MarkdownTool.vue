@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import 'katex/dist/katex.min.css'
 import { trackToolUse } from '../../analytics'
 import {
@@ -21,8 +21,9 @@ import {
 } from '@lucide/vue'
 import { markdownTitle, renderMarkdown } from '../../features/markdown/core/markdown'
 
-const STORAGE_KEY = 'sakura-tools-markdown-draft-v1'
 const SPLIT_KEY = 'sakura-tools-markdown-split-v1'
+// 历史版本曾把正文草稿写入该键；现已停用，仅在挂载时清掉遗留数据。
+const LEGACY_DRAFT_KEY = 'sakura-tools-markdown-draft-v1'
 const defaultDocument = `# 一份新的 Markdown 文档
 
 在左侧开始写作，右侧会实时生成适合阅读与打印的预览。
@@ -53,7 +54,7 @@ const preview = ref(null)
 const workbench = ref(null)
 const fileInput = ref(null)
 const fileName = ref('')
-const status = ref('自动保存已开启')
+const status = ref('内容仅保存在当前页面，刷新后清空')
 const splitPercent = ref(50)
 const resizing = ref(false)
 let scrollOrigin = ''
@@ -232,18 +233,12 @@ function resizeWithKeyboard(event) {
   else splitPercent.value = Math.max(24, Math.min(76, splitPercent.value + (event.key === 'ArrowLeft' ? -2 : 2)))
 }
 
-watch(source, (value) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, value)
-    status.value = '草稿已自动保存在浏览器'
-  } catch {
-    status.value = '浏览器存储空间不足，草稿未自动保存'
-  }
-})
-
 onMounted(() => {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved !== null) source.value = saved
+  try {
+    localStorage.removeItem(LEGACY_DRAFT_KEY)
+  } catch {
+    // 忽略存储不可用的情况。
+  }
   const savedSplit = Number(localStorage.getItem(SPLIT_KEY))
   if (savedSplit >= 24 && savedSplit <= 76) splitPercent.value = savedSplit
 })
