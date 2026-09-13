@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,21 +15,28 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sakurano/sakura-tools/backend/internal/analytics"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
 	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
 
 var validSlug = regexp.MustCompile(`^[a-z0-9-]{1,48}$`)
 
+var validClientID = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+
 type handler struct {
 	store             *store.Store
 	logger            *slog.Logger
 	translator        *translation.Service
+	analytics         *analytics.Service
+	adminToken        string
 	translationMu     sync.Mutex
-	translationLimits map[string]translationWindow
+	translationLimits map[string]rateWindow
+	analyticsMu       sync.Mutex
+	analyticsLimits   map[string]rateWindow
 }
 
-type translationWindow struct {
+type rateWindow struct {
 	started time.Time
 	count   int
 }
@@ -52,20 +61,28 @@ var toolCatalog = []tool{
 	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: true},
 }
 
-func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service) http.Handler {
+func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service, an *analytics.Service, adminToken string) http.Handler {
 	gin.SetMode(mode)
 	router := gin.New()
 	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
 		panic(err)
 	}
 	router.Use(gin.Recovery(), requestLogger(logger))
-	h := &handler{store: s, logger: logger, translator: translator, translationLimits: make(map[string]translationWindow)}
+	h := &handler{
+		store: s, logger: logger, translator: translator, analytics: an, adminToken: adminToken,
+		translationLimits: make(map[string]rateWindow), analyticsLimits: make(map[string]rateWindow),
+	}
 
 	api := router.Group("/api/v1")
 	api.GET("/health", h.health)
 	api.GET("/tools", h.tools)
 	api.POST("/events/tool-opened", h.toolOpened)
 	api.POST("/translate", h.translate)
+	api.POST("/analytics/collect", h.analyticsCollect)
+
+	admin := api.Group("/admin", h.requireAdmin)
+	admin.GET("/analytics/summary", h.adminAnalyticsSummary)
+
 	router.NoRoute(spaHandler(frontendDir))
 
 	return router
@@ -127,7 +144,7 @@ func (h *handler) allowTranslation(clientIP string) bool {
 	}
 	window := h.translationLimits[clientIP]
 	if window.started.IsZero() || now.Sub(window.started) >= 10*time.Minute {
-		h.translationLimits[clientIP] = translationWindow{started: now, count: 1}
+		h.translationLimits[clientIP] = rateWindow{started: now, count: 1}
 		return true
 	}
 	if window.count >= 20 {
@@ -136,6 +153,194 @@ func (h *handler) allowTranslation(clientIP string) bool {
 	window.count++
 	h.translationLimits[clientIP] = window
 	return true
+}
+
+// ---- 访问统计 ----
+
+// requireAdmin 保护 /api/v1/admin/*；未配置令牌时整体返回 404，不暴露接口存在。
+func (h *handler) requireAdmin(c *gin.Context) {
+	if h.adminToken == "" {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	token := c.GetHeader("X-Admin-Token")
+	if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(h.adminToken)) != 1 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	c.Next()
+}
+
+// analyticsCollect 接收前端匿名事件。失败只影响统计，不影响工具本身。
+func (h *handler) analyticsCollect(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.analytics == nil {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if !h.allowAnalyticsEvent(c.ClientIP()) {
+		c.Status(http.StatusTooManyRequests)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<10)
+	var input struct {
+		Type  string `json:"type"`
+		Tool  string `json:"tool"`
+		Path  string `json:"path"`
+		CID   string `json:"cid"`
+		Entry bool   `json:"entry"`
+		Ref   string `json:"ref"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event"})
+		return
+	}
+
+	device, browser, osName, bot := analytics.ClassifyUserAgent(c.Request.UserAgent())
+	day := analytics.CurrentDay()
+	if bot {
+		if err := h.analytics.CountBot(c.Request.Context(), day); err != nil {
+			h.logger.Warn("analytics bot count", "error", err)
+		}
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	if !validClientID.MatchString(input.CID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event"})
+		return
+	}
+
+	event := analytics.Event{
+		Device:     device,
+		Browser:    browser,
+		OS:         osName,
+		ClientHash: h.analytics.HashClientID(input.CID),
+		Entry:      input.Entry,
+		TS:         time.Now(),
+	}
+	switch input.Type {
+	case "page_view":
+		event.Type = "page_view"
+		event.Path = sanitizeEventPath(input.Path)
+		if slug, ok := toolSlugFromPath(event.Path); ok {
+			event.ToolSlug = slug
+		}
+		event.RefHost = externalRefHost(input.Ref, c.Request.Host)
+	case "tool_use":
+		if !validSlug.MatchString(input.Tool) || !isKnownTool(input.Tool) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tool slug"})
+			return
+		}
+		event.Type = "tool_use"
+		event.ToolSlug = input.Tool
+		event.Path = "/tools/" + input.Tool
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event"})
+		return
+	}
+
+	if err := h.analytics.Ingest(c.Request.Context(), &event); err != nil {
+		h.logger.Warn("analytics ingest", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not record event"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *handler) adminAnalyticsSummary(c *gin.Context) {
+	days := 7
+	switch c.Query("days") {
+	case "1":
+		days = 1
+	case "30":
+		days = 30
+	}
+	summary, err := h.analytics.Summary(c.Request.Context(), days)
+	if err != nil {
+		h.logger.Error("analytics summary", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load summary"})
+		return
+	}
+	names := make(map[string]string, len(toolCatalog))
+	for _, item := range toolCatalog {
+		names[item.Slug] = item.Name
+	}
+	for i := range summary.TopTools {
+		summary.TopTools[i].Name = names[summary.TopTools[i].Slug]
+	}
+	c.JSON(http.StatusOK, summary)
+}
+
+// allowAnalyticsEvent 对单 IP 限流：10 分钟最多 120 条事件。
+func (h *handler) allowAnalyticsEvent(clientIP string) bool {
+	h.analyticsMu.Lock()
+	defer h.analyticsMu.Unlock()
+	now := time.Now()
+	if len(h.analyticsLimits) > 1000 {
+		for ip, item := range h.analyticsLimits {
+			if now.Sub(item.started) >= 10*time.Minute {
+				delete(h.analyticsLimits, ip)
+			}
+		}
+	}
+	window := h.analyticsLimits[clientIP]
+	if window.started.IsZero() || now.Sub(window.started) >= 10*time.Minute {
+		h.analyticsLimits[clientIP] = rateWindow{started: now, count: 1}
+		return true
+	}
+	if window.count >= 120 {
+		return false
+	}
+	window.count++
+	h.analyticsLimits[clientIP] = window
+	return true
+}
+
+// sanitizeEventPath 只保留本站路径：去掉查询与锚点、限制长度，异常输入归一为 "/"。
+func sanitizeEventPath(raw string) string {
+	if index := strings.IndexAny(raw, "?#"); index >= 0 {
+		raw = raw[:index]
+	}
+	if raw == "" || !strings.HasPrefix(raw, "/") || len(raw) > 128 || strings.Contains(raw, "..") {
+		return "/"
+	}
+	return raw
+}
+
+func toolSlugFromPath(path string) (string, bool) {
+	rest, ok := strings.CutPrefix(path, "/tools/")
+	if !ok {
+		return "", false
+	}
+	rest = strings.Trim(rest, "/")
+	if !validSlug.MatchString(rest) || !isKnownTool(rest) {
+		return "", false
+	}
+	return rest, true
+}
+
+// externalRefHost 解析外部来源域名；空 referrer 或同站跳转返回空。
+func externalRefHost(raw, siteHost string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	host := strings.ToLower(parsed.Host)
+	if index := strings.LastIndex(host, ":"); index >= 0 && !strings.Contains(host, "]") {
+		host = host[:index]
+	}
+	host = strings.TrimPrefix(host, "www.")
+	if host == "" || strings.EqualFold(host, siteHost) {
+		return ""
+	}
+	if len(host) > 100 {
+		host = host[:100]
+	}
+	return host
 }
 
 func spaHandler(frontendDir string) gin.HandlerFunc {

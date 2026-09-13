@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'katex/dist/katex.min.css'
+import { trackToolUse } from '../../analytics'
 import {
   BoldIcon as Bold,
   Code2Icon as Code,
@@ -136,6 +137,7 @@ function downloadFile(content, name, type) {
 function exportMarkdown() {
   downloadFile(source.value, `${title.value}.md`, 'text/markdown;charset=utf-8')
   status.value = 'Markdown 文件已导出'
+  trackToolUse('markdown')
 }
 
 async function importMarkdown(event) {
@@ -158,6 +160,7 @@ function exportPdf() {
   window.print()
   document.documentElement.classList.remove('printing-markdown')
   document.title = originalTitle
+  trackToolUse('markdown')
 }
 
 function handleEditorKeydown(event) {

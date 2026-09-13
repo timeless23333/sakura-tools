@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { trackToolUse } from '../../analytics'
 import {
   CropIcon as Crop,
   DownloadIcon as Download,
@@ -228,6 +229,7 @@ async function download() {
     const base = fileName.value.replace(/\.[^.]+$/, '') || 'image'
     downloadBlob(blob, `${base}-edited.${selectedFormat.value.extension}`)
     notice.value = `已导出 ${selectedFormat.value.label} · ${formatBytes(blob.size)}`
+    trackToolUse('image')
   } catch (exportError) {
     error.value = exportError.message || '导出失败，请缩小尺寸后重试'
   } finally {

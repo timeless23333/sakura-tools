@@ -15,6 +15,8 @@ services:
       DEEPL_API_KEY: ${DEEPL_API_KEY:-}
       DEEPL_ENDPOINT: ${DEEPL_ENDPOINT:-}
       MYMEMORY_EMAIL: ${MYMEMORY_EMAIL:-}
+      ANALYTICS_ADMIN_TOKEN: ${ANALYTICS_ADMIN_TOKEN:-}
+      ANALYTICS_RAW_RETENTION_DAYS: ${ANALYTICS_RAW_RETENTION_DAYS:-14}
     volumes:
       - sakura_data:/app/data
       - /etc/pki/tls/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro

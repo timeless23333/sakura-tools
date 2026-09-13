@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { trackToolUse } from '../../analytics'
 import {
   BoxSelectIcon as BoxSelect,
   CropIcon as Crop,
@@ -168,6 +169,7 @@ function generatePattern() {
     selectedColor.value = nextCells.find((value) => value >= 0) ?? 0
     past.value = []
     future.value = []
+    trackToolUse('pixel-beads')
     nextTick(() => {
       fitCanvas()
       scheduleRender()

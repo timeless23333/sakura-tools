@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ClockIcon as Clock, RefreshCwIcon as RefreshCw } from '@lucide/vue'
+import { trackToolUse } from '../../analytics'
 
 const now = Date.now()
 const timestamp = ref(Math.floor(now / 1000))
@@ -43,7 +44,7 @@ const readable = computed(() => {
     <div class="timestamp-grid">
       <section>
         <label for="timestamp">时间戳</label>
-        <input id="timestamp" v-model="timestamp" type="number" @input="fromTimestamp" />
+        <input id="timestamp" v-model="timestamp" type="number" @input="fromTimestamp" @change="trackToolUse('timestamp')" />
         <div class="unit-toggle">
           <button type="button" :class="{ active: unit === 'seconds' }" @click="unit = 'seconds'; fromDate()">秒</button>
           <button type="button" :class="{ active: unit === 'milliseconds' }" @click="unit = 'milliseconds'; fromDate()">毫秒</button>
@@ -51,7 +52,7 @@ const readable = computed(() => {
       </section>
       <section>
         <label for="date-input">本地日期时间</label>
-        <input id="date-input" v-model="dateInput" type="datetime-local" step="1" @input="fromDate" />
+        <input id="date-input" v-model="dateInput" type="datetime-local" step="1" @input="fromDate" @change="trackToolUse('timestamp')" />
         <p>{{ readable }}</p>
       </section>
     </div>

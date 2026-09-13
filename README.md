@@ -54,6 +54,56 @@ MYMEMORY_EMAIL=
 
 部署脚本会自动读取项目根目录的 `.env`，并将宿主机 CA 证书只读挂载进 scratch 容器，以便 Go 后端发起 HTTPS 请求。文本会发送给所选第三方翻译服务，因此翻译页面不会标记为“本地处理”。
 
+## 访问统计（Analytics）
+
+内置一套 privacy-friendly 的轻量统计系统：区分 `page_view`（页面访问）与 `tool_use`（工具核心功能实际使用），支持 PV / UV / 30 天趋势 / 热门工具 / 入口页面 / Referrer / 设备浏览器 OS 分布 / Bot 流量。不引入任何重型组件，全部落在现有 SQLite。
+
+### 数据流
+
+```text
+浏览器（src/analytics.js，sendBeacon 非阻塞上报）
+  │  POST /api/v1/analytics/collect（限流、校验、Bot 识别）
+  ▼
+Go 后端：单事务写入 analytics_events（原始事件）+ 按日聚合表
+  ▼
+Dashboard（/admin/analytics）只读聚合表，每行代表一天
+```
+
+- 页面切换由 vue-router `afterEach` 统一上报，工具组件只需在核心功能成功后调用一行 `trackToolUse('slug')`。
+- 新工具接入统计：在组件内 `import { trackToolUse } from '../../analytics'` 并在核心操作成功后调用即可，PV 由路由自动统计。
+- Bot（Googlebot、扫描器、curl、监控探针等按 UA 识别）只计入 `bot_pv`，不进入 PV/UV。
+- `/admin/*` 页面与开发环境（vite dev / localhost）默认不上报；本地调试统计可在控制台执行 `localStorage.setItem('sakura-analytics-dev', '1')`。
+
+### 存储、保留与资源占用
+
+| 表 | 用途 | 保留 |
+| --- | --- | --- |
+| `analytics_events` | 原始事件（回查/重放用） | 默认 14 天，可配 3–90 天 |
+| `analytics_visitors` / `analytics_tool_visitors` | 每日访客集合（UV、新/回访） | 60 天 |
+| `analytics_daily` / `analytics_tool_daily` / `analytics_detail_daily` / `analytics_clients` | 按日聚合与访客首见日 | 长期（每天几十行以内） |
+
+后端每 6 小时清理一次过期数据。Dashboard 只查聚合表（主键范围扫描），不扫描原始事件；单条事件写入是一次含约 10 条语句的小事务，2 核 2G 下毫秒级完成，静态资源请求和健康检查不会产生任何统计。
+
+### 隐私方案
+
+- 访客标识：浏览器生成随机 UUID 存于 localStorage（无过期，直到用户清除），服务端以 `HMAC-SHA256(密钥, UUID)` 截断为 64 位散列存储，密钥保存在数据库 `analytics_meta` 中且不外发，无法反推、无任何个人信息。
+- 不做浏览器指纹、不保存 IP、不使用 Cookie、不接第三方统计脚本。
+- 新访客/回访访客通过该散列的“首见日”判定，只在本站内成立，不构成跨站追踪。
+
+### 管理端 Dashboard
+
+访问 `https://sakurano.xyz/admin/analytics`（不设导航入口，仅管理员使用）：
+
+1. 在服务器 `.env` 中设置令牌：`ANALYTICS_ADMIN_TOKEN=$(openssl rand -hex 24)`；
+2. `bash scripts/deploy.sh` 重新部署；
+3. 打开页面输入令牌，令牌仅保存在浏览器 sessionStorage，关闭标签页即失效。
+
+未配置令牌时管理接口整体返回 404。时间范围支持 今日 / 7 天 / 30 天。
+
+### 与 Nginx 日志的分工
+
+应用统计只记录“人的行为”（前端主动上报的事件）。Nginx access log 继续承担运维视角：状态码、带宽、异常请求、爬虫扫描等，两者不会重复计数同一次访问。可选：在 Nginx 中对 `/api/v1/analytics/` 关闭 access log 以减少噪音（见 `nginx/sakurano.xyz.conf` 注释）。
+
 ## 本地开发
 
 要求：Node.js 22+、Go 1.25+。
@@ -155,5 +205,5 @@ podman logs --tail=100 sakura-tools-app
 - 每个前端工具使用稳定 slug，并在 `frontend/src/data/tools.js` 注册。
 - 可用工具页面放在 `frontend/src/components/tools/`，不把所有逻辑堆进首页。
 - API 使用 `/api/v1` 前缀；业务代码放入 `backend/internal`。
-- 不记录用户输入内容。当前数据库只按工具聚合匿名打开次数，表大小不会随访问量持续增长。
+- 不记录用户输入内容。访问统计只保存随机 ID 的不可逆散列与按日聚合，原始事件定期清理，表大小不随访问量无限增长。
 - 大文件工具必须设置大小限制、超时和临时文件清理策略；2 核 2G 环境不要把 PDF/图片任务无限并发。

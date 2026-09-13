@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { trackToolUse } from '../../analytics'
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
@@ -255,6 +256,7 @@ async function exportPdf() {
       lastOutputBytes.value = downloadBytes(bytes, `${baseName}-单页.zip`, 'application/zip')
       notice.value = `已导出 ${chosen.length} 个单页 PDF · ${formatBytes(lastOutputBytes.value)}`
     }
+    trackToolUse('pdf')
   } catch (exportError) {
     error.value = exportError.message || 'PDF 导出失败，请减少页面后重试'
   } finally {

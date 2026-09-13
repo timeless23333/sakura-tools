@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sakurano/sakura-tools/backend/internal/analytics"
 	"github.com/sakurano/sakura-tools/backend/internal/config"
 	"github.com/sakurano/sakura-tools/backend/internal/httpapi"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
@@ -26,6 +27,15 @@ func main() {
 	}
 	defer db.Close()
 
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	an, err := analytics.New(bgCtx, db.DB(), logger)
+	if err != nil {
+		logger.Error("init analytics", "error", err)
+		os.Exit(1)
+	}
+	go an.RunCleanup(bgCtx, cfg.RawRetentionDays)
+
 	server := &http.Server{
 		Addr: cfg.Address,
 		Handler: httpapi.NewRouter(db, logger, cfg.Mode, cfg.FrontendDir, translation.New(translation.Config{
@@ -33,7 +43,7 @@ func main() {
 			DeepLEndpoint:    cfg.DeepLEndpoint,
 			MyMemoryEmail:    cfg.MyMemoryEmail,
 			MyMemoryEndpoint: cfg.MyMemoryEndpoint,
-		})),
+		}), an, cfg.AdminToken),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

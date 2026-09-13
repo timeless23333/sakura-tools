@@ -60,6 +60,9 @@ func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
+// DB 暴露底层 SQLite 连接（单连接池），供共享该连接的内部模块使用。
+func (s *Store) DB() *sql.DB { return s.db }
+
 func (s *Store) RecordToolOpened(ctx context.Context, slug string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO tool_stats (tool_slug, open_count, updated_at)

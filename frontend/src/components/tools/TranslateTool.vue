@@ -9,6 +9,7 @@ import {
   ShieldCheckIcon as ShieldCheck,
   Trash2Icon as Trash,
 } from '@lucide/vue'
+import { trackToolUse } from '../../analytics'
 
 const languages = [
   { code: 'zh-CN', name: '简体中文' },
@@ -71,6 +72,7 @@ async function translate() {
     detectedSource.value = body.detected_source || ''
     provider.value = body.provider || ''
     notice.value = `${provider.value} · ${sourceLength.value} 字符`
+    trackToolUse('translate')
   } catch (requestError) {
     error.value = requestError.name === 'AbortError' ? '翻译请求超时，请检查网络后重试' : requestError.message
   } finally {

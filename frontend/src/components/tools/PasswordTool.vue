@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { CheckIcon as Check, ClipboardIcon as Clipboard, RefreshCwIcon as RefreshCw } from '@lucide/vue'
+import { trackToolUse } from '../../analytics'
 
 const length = ref(20)
 const options = ref({ upper: true, lower: true, numbers: true, symbols: true })
@@ -15,7 +16,7 @@ const strength = computed(() => {
   return bits > 110 ? '很强' : bits > 75 ? '强' : bits > 45 ? '一般' : '较弱'
 })
 
-function generate() {
+function generate(track = true) {
   const sets = []
   if (options.value.upper) sets.push('ABCDEFGHJKLMNPQRSTUVWXYZ')
   if (options.value.lower) sets.push('abcdefghijkmnopqrstuvwxyz')
@@ -24,6 +25,7 @@ function generate() {
   const chars = sets.join('') || 'abcdefghijkmnopqrstuvwxyz'
   const values = crypto.getRandomValues(new Uint32Array(length.value))
   password.value = Array.from(values, (value) => chars[value % chars.length]).join('')
+  if (track) trackToolUse('password')
 }
 
 function legacyCopy(text) {
@@ -73,7 +75,7 @@ async function copy() {
 
 onBeforeUnmount(() => clearTimeout(copyTimer))
 
-generate()
+generate(false)
 </script>
 
 <template>
@@ -84,14 +86,14 @@ generate()
     </div>
     <p v-if="copyError" class="error-message" role="status">{{ copyError }}</p>
     <div class="password-options">
-      <label class="length-control">密码长度 <strong>{{ length }}</strong><input v-model.number="length" type="range" min="8" max="64" @input="generate" /></label>
+      <label class="length-control">密码长度 <strong>{{ length }}</strong><input v-model.number="length" type="range" min="8" max="64" @input="generate()" /></label>
       <div class="check-grid">
-        <label><input v-model="options.upper" type="checkbox" @change="generate" /> 大写字母</label>
-        <label><input v-model="options.lower" type="checkbox" @change="generate" /> 小写字母</label>
-        <label><input v-model="options.numbers" type="checkbox" @change="generate" /> 数字</label>
-        <label><input v-model="options.symbols" type="checkbox" @change="generate" /> 特殊符号</label>
+        <label><input v-model="options.upper" type="checkbox" @change="generate()" /> 大写字母</label>
+        <label><input v-model="options.lower" type="checkbox" @change="generate()" /> 小写字母</label>
+        <label><input v-model="options.numbers" type="checkbox" @change="generate()" /> 数字</label>
+        <label><input v-model="options.symbols" type="checkbox" @change="generate()" /> 特殊符号</label>
       </div>
     </div>
-    <div class="password-footer"><span>强度：<strong>{{ strength }}</strong></span><button class="primary-button" type="button" @click="generate"><RefreshCw :size="16" /> 重新生成</button></div>
+    <div class="password-footer"><span>强度：<strong>{{ strength }}</strong></span><button class="primary-button" type="button" @click="generate()"><RefreshCw :size="16" /> 重新生成</button></div>
   </div>
 </template>

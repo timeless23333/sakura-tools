@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { CheckIcon as Check, ClipboardIcon as Clipboard, Minimize2Icon as Minimize2, WandSparklesIcon as WandSparkles } from '@lucide/vue'
+import { trackToolUse } from '../../analytics'
 
 const input = ref('{\n  "project": "sakura-tools",\n  "status": "growing",\n  "private": true\n}')
 const error = ref('')
@@ -10,6 +11,7 @@ function transform(compact = false) {
   try {
     input.value = JSON.stringify(JSON.parse(input.value), null, compact ? 0 : 2)
     error.value = ''
+    trackToolUse('json')
   } catch (err) {
     error.value = `第 ${getErrorLine(err.message)} 行附近：${err.message}`
   }

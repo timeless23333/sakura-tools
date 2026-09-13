@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { trackToolUse } from '../../analytics'
 import {
   ArrowLeftRightIcon as Swap,
   CheckIcon as Check,
@@ -160,6 +161,7 @@ async function copy(value, key) {
     if (!successful) throw new Error('copy failed')
     copiedKey.value = key
     notice.value = '已复制到剪贴板'
+    trackToolUse('color')
     clearTimeout(copyTimer)
     copyTimer = setTimeout(() => (copiedKey.value = ''), 1400)
   } catch {

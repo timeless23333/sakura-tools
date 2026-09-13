@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeftIcon as ArrowLeft, CloudIcon as Cloud, LockKeyholeIcon as LockKeyhole } from '@lucide/vue'
 import { findTool } from '../data/tools'
@@ -18,14 +18,6 @@ const PdfTool = defineAsyncComponent(() => import('../components/tools/PdfTool.v
 const ColorTool = defineAsyncComponent(() => import('../components/tools/ColorTool.vue'))
 const components = { json: JsonTool, base64: Base64Tool, timestamp: TimestampTool, password: PasswordTool, translate: TranslateTool, markdown: MarkdownTool, image: ImageTool, pdf: PdfTool, color: ColorTool, 'pixel-beads': PixelBeadsTool }
 const toolComponent = computed(() => components[route.params.slug])
-
-onMounted(() => {
-  fetch('/api/v1/events/tool-opened', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slug: route.params.slug }),
-  }).catch(() => {})
-})
 </script>
 
 <template>
