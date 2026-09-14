@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
     <footer class="markdown-statusbar">
       <span>{{ fileName || `${title}.md` }}</span>
       <span>{{ status }}</span>
-      <span>仅允许安全表格 HTML</span>
+      <span>预览仅渲染白名单 HTML（表格 / 图片 / 对齐）</span>
     </footer>
   </div>
 </template>

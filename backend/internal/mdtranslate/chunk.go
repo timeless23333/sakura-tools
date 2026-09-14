@@ -1,6 +1,9 @@
 package mdtranslate
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // segmentKind: text 段需要翻译；verbatim 段原样保留（代码、公式、References）。
 type segmentKind int
@@ -101,6 +104,14 @@ func splitSegments(markdown string, translateReferences bool) []segment {
 			continue
 		}
 
+		// 纯图片 HTML 行（PaddleOCR 图注结构）不含可翻译文本，原样保留，
+		// 避免带签名的长图片 URL 被模型改写。
+		if strings.HasPrefix(trimmed, "<") && isImageOnlyHtml(line) {
+			segments = append(segments, segment{kind: segmentVerbatim, content: line, section: currentSection})
+			i++
+			continue
+		}
+
 		// 表格：连续的表格行作为整段（不会在行中间断开）。
 		if strings.HasPrefix(trimmed, "|") {
 			block := []string{line}
@@ -139,7 +150,8 @@ func splitSegments(markdown string, translateReferences bool) []segment {
 			t := strings.TrimSpace(lines[i])
 			if t == "" || headingLevel(t) > 0 || strings.HasPrefix(t, "```") ||
 				strings.HasPrefix(t, "$$") || strings.HasPrefix(t, "\\[") ||
-				strings.HasPrefix(t, ">") || isListItem(t) || strings.HasPrefix(t, "|") {
+				strings.HasPrefix(t, ">") || isListItem(t) || strings.HasPrefix(t, "|") ||
+				strings.HasPrefix(t, "<div") || strings.HasPrefix(t, "<img") {
 				break
 			}
 			block = append(block, lines[i])
@@ -148,6 +160,16 @@ func splitSegments(markdown string, translateReferences bool) []segment {
 		segments = append(segments, segment{kind: segmentText, content: strings.Join(block, "\n"), section: currentSection})
 	}
 	return segments
+}
+
+var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+// isImageOnlyHtml 判断一行 HTML 去掉标签后是否不含任何文本（即纯图片容器）。
+func isImageOnlyHtml(line string) bool {
+	if !strings.Contains(line, "<img") {
+		return false
+	}
+	return strings.TrimSpace(htmlTagPattern.ReplaceAllString(line, "")) == ""
 }
 
 // groupUnits 把原子段聚合为翻译单元：标题处开新单元、文本单元不超过 maxChars；

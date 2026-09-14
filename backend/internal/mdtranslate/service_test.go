@@ -67,6 +67,32 @@ func TestSplitSegmentsKeepsCodeAndMathVerbatim(t *testing.T) {
 	}
 }
 
+func TestImageOnlyHtmlStaysVerbatim(t *testing.T) {
+	imageLine := `<div style="text-align: center;"><img src="https://cdn.example/a.jpg?authorization=bce-auth-v1%2Fx" alt="Image" width="36%" /></div>`
+	captionLine := `<div style="text-align: center;"><div style="text-align: center;">(a) SportsMOT中的篮球</div></div>`
+	markdown := strings.Join([]string{"# Figures", "", imageLine, "", captionLine}, "\n")
+
+	units := groupUnits(splitSegments(markdown, false), 4000)
+	var imageUnit, captionUnit *unit
+	for i := range units {
+		if strings.Contains(units[i].content, "<img") {
+			imageUnit = &units[i]
+		}
+		if strings.Contains(units[i].content, "篮球") {
+			captionUnit = &units[i]
+		}
+	}
+	if imageUnit == nil || !imageUnit.verbatim {
+		t.Fatalf("image-only html must be verbatim, units=%+v", units)
+	}
+	if !strings.Contains(imageUnit.content, "bce-auth-v1%2Fx") {
+		t.Fatal("image url must stay intact")
+	}
+	if captionUnit == nil || captionUnit.verbatim {
+		t.Fatal("caption text must remain translatable")
+	}
+}
+
 func TestReferencesPassthroughByDefault(t *testing.T) {
 	markdown := "# Paper\n\nBody.\n\n## References\n\n[1] Doe J. Something. 2024."
 	units := groupUnits(splitSegments(markdown, false), 4000)

@@ -27,6 +27,65 @@ function safeUrl(value, image = false) {
   return '#'
 }
 
+// 允许原样渲染的白名单 HTML 标签（PaddleOCR 输出的图注结构使用 div/img）。
+const htmlBlockTags = new Set(['div', 'span', 'p', 'br', 'img', 'center', 'sup', 'sub', 'figure', 'figcaption'])
+
+const htmlBlockPattern = /^\s*<\/?(div|img|span|p|br|center|sup|sub|figure|figcaption)\b/i
+
+function attrValue(attrs, name) {
+  const match = attrs.match(new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i'))
+  return match?.[2] ?? match?.[3] ?? match?.[4] ?? ''
+}
+
+function sanitizeStyle(value) {
+  const kept = []
+  for (const declaration of String(value).split(';')) {
+    const match = declaration.match(/^\s*(text-align)\s*:\s*(center|left|right|justify)\s*$/i)
+    if (match) kept.push(`${match[1].toLowerCase()}: ${match[2].toLowerCase()}`)
+  }
+  return kept.join('; ')
+}
+
+function sanitizeImgSrc(value) {
+  const url = value.trim()
+  if (/^(https?:\/\/|#|\/)/i.test(url)) return escapeHtml(url)
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(url)) return escapeHtml(url)
+  return ''
+}
+
+// sanitizeHtmlBlock 只保留白名单标签与安全属性：
+// img 仅接受 http/https/data-image src 与数字/百分比 width，style 仅允许 text-align，
+// 其余属性（含事件处理器与 javascript: 地址）一律剥除，白名单外的标签丢弃但保留内部文本。
+function sanitizeHtmlBlock(rawHtml) {
+  const tokens = String(rawHtml).match(/<[^>]*>|[^<]+/g) || []
+  return tokens.map((token) => {
+    if (!token.startsWith('<')) return escapeHtml(token)
+    const match = token.match(/^<\s*(\/?)\s*([a-zA-Z0-9]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)\s*>$/)
+    if (!match) return escapeHtml(token)
+    const closing = Boolean(match[1])
+    const tag = match[2].toLowerCase()
+    const attrs = match[3] || ''
+    const selfClosed = match[4] === '/'
+    if (!htmlBlockTags.has(tag)) return ''
+    if (closing) return `</${tag}>`
+    const attributes = []
+    if (tag === 'img') {
+      const safeSrc = sanitizeImgSrc(attrValue(attrs, 'src'))
+      if (!safeSrc) return ''
+      attributes.push(`src="${safeSrc}"`)
+      const alt = attrValue(attrs, 'alt')
+      if (alt) attributes.push(`alt="${escapeHtml(alt)}"`)
+      const width = attrValue(attrs, 'width').trim()
+      if (width && (/^\d{1,3}%$/.test(width) || /^\d{1,4}$/.test(width))) attributes.push(`width="${width}"`)
+    }
+    if (tag === 'div' || tag === 'span' || tag === 'p' || tag === 'figure' || tag === 'figcaption') {
+      const safeStyle = sanitizeStyle(attrValue(attrs, 'style'))
+      if (safeStyle) attributes.push(`style="${safeStyle}"`)
+    }
+    return `<${tag}${attributes.length ? ` ${attributes.join(' ')}` : ''}${selfClosed ? ' /' : ''}>`
+  }).join('')
+}
+
 function inlineMarkdown(value) {
   const codeSpans = []
   const inlineAssets = []
@@ -168,6 +227,17 @@ export function renderMarkdown(markdown) {
       continue
     }
 
+    // 白名单 HTML 块（PaddleOCR 图注/图片结构）：收集到空行为止，消毒后原样渲染。
+    if (htmlBlockPattern.test(line)) {
+      const block = []
+      while (index < lines.length && lines[index].trim() !== '') {
+        block.push(lines[index])
+        index += 1
+      }
+      blocks.push(sanitizeHtmlBlock(block.join('\n')))
+      continue
+    }
+
     const fence = line.match(/^\s*```([^`]*)$/)
     if (fence) {
       const code = []
@@ -231,6 +301,7 @@ export function renderMarkdown(markdown) {
       && !/^(#{1,6})\s+/.test(lines[index])
       && !/^\s*```/.test(lines[index])
       && !/^\s*>/.test(lines[index])
+      && !htmlBlockPattern.test(lines[index])
       && !/^\s*([-+*]|\d+[.)])\s+/.test(lines[index])) {
       if (index + 1 < lines.length && isTableDivider(lines[index + 1])) break
       paragraph.push(lines[index])
