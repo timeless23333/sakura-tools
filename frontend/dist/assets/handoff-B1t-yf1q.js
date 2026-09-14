@@ -1,4 +1,4 @@
-import{c as Wa}from"./index-DPgG2RXq.js";/**
+import{c as Wa}from"./index-DXFtiBHo.js";/**
  * @license @lucide/vue v1.34.0 - ISC
  *
  * This source code is licensed under the ISC license.

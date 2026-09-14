@@ -1,6 +1,6 @@
 <script setup>
-import { computed, defineAsyncComponent } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, defineAsyncComponent, watchEffect } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeftIcon as ArrowLeft, CloudIcon as Cloud, LockKeyholeIcon as LockKeyhole } from '@lucide/vue'
 import { findTool } from '../data/tools'
 import JsonTool from '../components/tools/JsonTool.vue'
@@ -12,7 +12,12 @@ import TranslateTool from '../components/tools/TranslateTool.vue'
 import ImageTool from '../components/tools/ImageTool.vue'
 
 const route = useRoute()
+const router = useRouter()
 const tool = computed(() => findTool(route.params.slug))
+// 未上线的工具直接跳回首页（例如暂时关闭的 PDF 转 Markdown）。
+watchEffect(() => {
+  if (tool.value && tool.value.ready === false) router.replace('/')
+})
 const MarkdownTool = defineAsyncComponent(() => import('../components/tools/MarkdownTool.vue'))
 const PdfTool = defineAsyncComponent(() => import('../components/tools/PdfTool.vue'))
 const ColorTool = defineAsyncComponent(() => import('../components/tools/ColorTool.vue'))
