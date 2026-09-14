@@ -306,7 +306,7 @@ body.markdown-resizing { cursor: col-resize; user-select: none; }
 .markdown-pane-heading small { overflow: hidden; font: 9px ui-monospace, Consolas, monospace; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
 .markdown-editor-pane textarea { flex: 1; width: 100%; min-height: 0; resize: none; padding: 27px 30px 70px; border: 0; outline: 0; color: var(--ink); background: var(--surface); font: 13px/1.85 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 .markdown-editor-pane textarea:focus { box-shadow: inset 3px 0 0 var(--ochre); }
-.markdown-preview { width: min(760px, calc(100% - 48px)); min-height: calc(100% - 72px); margin: 24px auto 48px; padding: 54px 64px 80px; color: #292621; background: #fffefa; box-shadow: 0 12px 38px rgba(43, 38, 31, .12); font: 15px/1.82 Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; overflow-wrap: anywhere; }
+.markdown-preview { width: min(1240px, calc(100% - 48px)); min-height: calc(100% - 72px); margin: 24px auto 48px; padding: 54px 64px 80px; color: #292621; background: #fffefa; box-shadow: 0 12px 38px rgba(43, 38, 31, .12); font: 15px/1.82 Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; overflow-wrap: anywhere; }
 .markdown-preview > :first-child { margin-top: 0; }
 .markdown-preview > :last-child { margin-bottom: 0; }
 .markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { color: #211f1c; font-family: 'Songti SC', STSong, serif; line-height: 1.38; break-after: avoid-page; }

@@ -1,4 +1,4 @@
-import{c as Va}from"./index-beivTmH-.js";/**
+import{c as Va}from"./index-CQTN4zhl.js";/**
  * @license @lucide/vue v1.34.0 - ISC
  *
  * This source code is licensed under the ISC license.
