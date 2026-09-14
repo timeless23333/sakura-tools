@@ -38,7 +38,7 @@ let completionTracked = false
 let translationTracked = false
 
 const step = computed(() => {
-  if (!file.value) return 1
+  if (!file.value || !job.value) return 1
   if (zhMd.value) return 4
   if (originalMd.value) return 3
   return 2
@@ -100,13 +100,16 @@ function validateAndSet(selected) {
     .then((doc) => {
       pages.value = doc.getPageCount()
       if (pages.value > MAX_PAGES) {
-        error.value = `PDF 共 ${pages.value} 页，超过 ${MAX_PAGES} 页限制`
         reset()
+        error.value = `PDF 共 ${pages.value} 页，超过 ${MAX_PAGES} 页限制`
+        return
       }
+      // 校验通过后自动开始解析，无需再点按钮。
+      start()
     })
     .catch(() => {
-      error.value = '无法读取这个 PDF，文件可能已损坏或受密码保护'
       reset()
+      error.value = '无法读取这个 PDF，文件可能已损坏或受密码保护'
     })
 }
 
@@ -274,7 +277,7 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <section class="pdfmd-step" :class="{ active: step === 1 }">
-      <header class="pdfmd-step-head"><span class="pdfmd-step-no">01</span> 选择 PDF</header>
+      <header class="pdfmd-step-head"><span class="pdfmd-step-no">01</span> 选择 PDF <small class="pdfmd-hint">选择后自动开始解析</small></header>
       <div class="pdfmd-pick">
         <button class="secondary-button" type="button" :disabled="!!file" @click="fileInput?.click()">
           <FileUp :size="15" /> 选择 PDF 文件
@@ -358,6 +361,7 @@ onBeforeUnmount(stopPolling)
 .pdfmd-step-no { color: var(--sakura); font-size: 13px; letter-spacing: 1px; }
 .pdfmd-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pdfmd-fileinfo { color: var(--muted); font-size: 13px; }
+.pdfmd-hint { color: var(--muted); font-size: 12px; font-weight: 400; }
 .pdfmd-progress { display: flex; flex-direction: column; gap: 8px; }
 .pdfmd-bar { height: 8px; border-radius: 4px; background: var(--paper-deep); overflow: hidden; }
 .pdfmd-bar span { display: block; height: 100%; border-radius: 4px; background: var(--sakura); transition: width 0.4s ease; }
