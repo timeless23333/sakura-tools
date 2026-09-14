@@ -27,8 +27,9 @@ func openTestDB(t *testing.T) *sql.DB {
 }
 
 type fakeOCR struct {
-	submitted int
-	blocked   bool
+	submitted  int
+	blocked    bool
+	pollErrors bool
 }
 
 func (f *fakeOCR) SubmitJob(ctx context.Context, fileName string, r io.Reader) (string, error) {
@@ -41,7 +42,10 @@ func (f *fakeOCR) SubmitJob(ctx context.Context, fileName string, r io.Reader) (
 }
 
 func (f *fakeOCR) PollJob(ctx context.Context, jobID string) (paddleocr.JobStatus, error) {
-	if f.blocked {
+	switch {
+	case f.pollErrors:
+		return paddleocr.JobStatus{}, errors.New("service down")
+	case f.blocked:
 		return paddleocr.JobStatus{State: "running"}, nil
 	}
 	return paddleocr.JobStatus{
@@ -173,6 +177,36 @@ func TestPerIPConcurrencyLimit(t *testing.T) {
 	}
 	if _, err := svc.Create(context.Background(), "ip", "b.pdf", 0, strings.NewReader("%PDF-1.4 b")); !errors.Is(err, ErrTooManyActive) {
 		t.Fatalf("expected active limit error, got %v", err)
+	}
+}
+
+func TestStaleActiveJobsDoNotBlock(t *testing.T) {
+	db := openTestDB(t)
+	cfg := Config{TempDir: t.TempDir(), PollInterval: time.Millisecond, CleanupInterval: time.Hour, PerIPConcurrent: 1}
+	svc, err := New(db, &fakeOCR{blocked: true}, &fakeTranslator{}, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 一个 10 分钟没有更新的“活动”任务（例如进程曾崩溃残留）不应阻塞新任务。
+	now := time.Now().Unix()
+	db.Exec(`INSERT INTO pdf_jobs (id, state, ip_hash, created_at, updated_at)
+		VALUES ('stale', 'ocr_processing', 'ip', ?, ?)`, now-600, now-600)
+	if _, err := svc.Create(context.Background(), "ip", "a.pdf", 0, strings.NewReader("%PDF-1.4 a")); err != nil {
+		t.Fatalf("stale active job must not block new jobs: %v", err)
+	}
+}
+
+func TestPollErrorsFailFast(t *testing.T) {
+	svc := newTestService(t, &fakeOCR{pollErrors: true}, &fakeTranslator{}, func(cfg *Config) {
+		cfg.PollInterval = 5 * time.Millisecond
+	})
+	job, err := svc.Create(context.Background(), "ip", "a.pdf", 0, strings.NewReader("%PDF-1.4 a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitForState(t, svc, job.ID, StateFailed)
+	if !strings.Contains(view.Error, "OCR 服务暂时不可用") {
+		t.Fatalf("unexpected failure reason: %q", view.Error)
 	}
 }
 

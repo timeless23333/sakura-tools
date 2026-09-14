@@ -44,11 +44,18 @@ var (
 	ErrQuotaExceeded    = errors.New("今日 OCR 额度已用完，请明天再试")
 	ErrTranslateQuota   = errors.New("今日翻译额度已用完，请明天再试")
 	ErrIPDailyQuota     = errors.New("今日任务数已达上限，请明天再试")
-	ErrTooManyActive    = errors.New("同时进行的任务过多，请稍后再试")
+	ErrTooManyActive    = errors.New("同时进行的任务过多，请等之前的任务完成后再试")
 	ErrJobNotFound      = errors.New("任务不存在或已过期")
 	ErrInvalidState     = errors.New("当前任务状态不允许该操作")
 	ErrNoTranslator     = errors.New("翻译服务未配置")
 	ErrMarkdownNotReady = errors.New("Markdown 尚未生成")
+)
+
+const (
+	// 连续轮询失败上限：超过后立即判失败，不占住并发名额等超时。
+	maxConsecutivePollErrors = 10
+	// 活动任务的“新鲜度”窗口：超过该时间没有状态更新的活动任务不计入并发限制。
+	activeFreshWindow = 5 * time.Minute
 )
 
 // Translator 是翻译抽象；由 mdtranslate 提供 OpenAI-compatible 实现。
@@ -141,7 +148,7 @@ func New(db *sql.DB, ocr OCRClient, translator Translator, logger *slog.Logger, 
 		cfg.PollInterval = 5 * time.Second
 	}
 	if cfg.PollTimeout <= 0 {
-		cfg.PollTimeout = 30 * time.Minute
+		cfg.PollTimeout = 10 * time.Minute
 	}
 	if cfg.CleanupInterval <= 0 {
 		cfg.CleanupInterval = time.Hour
@@ -248,8 +255,9 @@ func (s *Service) Create(ctx context.Context, ipHash, fileName string, pages int
 	if err := s.db.QueryRow(`SELECT
 			COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN created_at >= ? AND ip_hash = ? THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN state NOT IN (?, ?) AND ip_hash = ? THEN 1 ELSE 0 END), 0)
-		FROM pdf_jobs`, dayStart, dayStart, ipHash, StateCompleted, StateFailed, ipHash).
+			COALESCE(SUM(CASE WHEN state NOT IN (?, ?) AND ip_hash = ? AND updated_at >= ? THEN 1 ELSE 0 END), 0)
+		FROM pdf_jobs`, dayStart, dayStart, ipHash, StateCompleted, StateFailed, ipHash,
+		time.Now().Add(-activeFreshWindow).Unix()).
 		Scan(&globalToday, &ipToday, &ipActive); err != nil {
 		return nil, err
 	}
@@ -354,18 +362,30 @@ func (s *Service) runOCR(ctx context.Context, id, tempPath, fileName string) {
 }
 
 // pollLoop 周期轮询 PaddleOCR 直到 done/failed/超时；进程重启后可直接复用。
+// 连续轮询失败达到上限、或出现令牌/配额类永久错误时立即失败，
+// 避免任务长时间占用并发名额。
 func (s *Service) pollLoop(ctx context.Context, id, providerID string) {
 	deadline := time.Now().Add(s.cfg.PollTimeout)
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
+	consecutiveErrors := 0
 	for {
 		status, err := s.ocr.PollJob(ctx, providerID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			if time.Now().After(deadline) {
-				s.fail(id, "OCR 超时，请稍后重试")
+			if errors.Is(err, paddleocr.ErrAuth) {
+				s.fail(id, "OCR 服务令牌无效，请联系站长检查配置")
+				return
+			}
+			if errors.Is(err, paddleocr.ErrQuota) {
+				s.fail(id, "OCR 服务今日额度已用完，请明天再试")
+				return
+			}
+			consecutiveErrors++
+			if consecutiveErrors >= maxConsecutivePollErrors || time.Now().After(deadline) {
+				s.fail(id, "OCR 服务暂时不可用，请稍后重试")
 				return
 			}
 			s.logger.Warn("pdfjob poll error", "job", id, "error", err)
@@ -376,6 +396,7 @@ func (s *Service) pollLoop(ctx context.Context, id, providerID string) {
 			}
 			continue
 		}
+		consecutiveErrors = 0
 		switch status.State {
 		case "done":
 			if status.TotalPages > 0 {
@@ -534,6 +555,13 @@ func (s *Service) cleanupOnce() {
 	cutoff := time.Now().Add(-s.cfg.TTL).Unix()
 	if _, err := s.db.Exec(`DELETE FROM pdf_jobs WHERE updated_at < ?`, cutoff); err != nil {
 		s.logger.Warn("pdfjob cleanup failed", "error", err)
+	}
+	// 兜底：卡在中间状态超过 30 分钟没有更新的任务标记失败，释放并发名额。
+	if _, err := s.db.Exec(`UPDATE pdf_jobs SET state = ?, error = ?, updated_at = ?
+		WHERE state NOT IN (?, ?) AND updated_at < ?`,
+		StateFailed, "任务长时间无进展，已自动结束", StateCompleted, StateFailed,
+		time.Now().Add(-30*time.Minute).Unix()); err != nil {
+		s.logger.Warn("pdfjob stale sweep failed", "error", err)
 	}
 	entries, err := os.ReadDir(s.cfg.TempDir)
 	if err != nil {
