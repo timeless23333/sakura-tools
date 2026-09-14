@@ -20,6 +20,7 @@ import {
   UploadIcon as Upload,
 } from '@lucide/vue'
 import { markdownTitle, renderMarkdown } from '../../features/markdown/core/markdown'
+import { takePendingMarkdown } from '../../features/markdown/handoff'
 
 const SPLIT_KEY = 'sakura-tools-markdown-split-v1'
 // 历史版本曾把正文草稿写入该键；现已停用，仅在挂载时清掉遗留数据。
@@ -234,6 +235,13 @@ function resizeWithKeyboard(event) {
 }
 
 onMounted(() => {
+  // 接收来自 PDF 转 Markdown 工具的交接内容（仅内存，不入库）。
+  const pending = takePendingMarkdown()
+  if (pending?.content) {
+    source.value = pending.content
+    fileName.value = pending.name || ''
+    status.value = '已导入来自 PDF 转 Markdown 工具的内容，刷新后不会保留'
+  }
   try {
     localStorage.removeItem(LEGACY_DRAFT_KEY)
   } catch {

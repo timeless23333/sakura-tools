@@ -6,12 +6,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/sakurano/sakura-tools/backend/internal/analytics"
 	"github.com/sakurano/sakura-tools/backend/internal/config"
 	"github.com/sakurano/sakura-tools/backend/internal/httpapi"
+	"github.com/sakurano/sakura-tools/backend/internal/mdtranslate"
+	"github.com/sakurano/sakura-tools/backend/internal/paddleocr"
+	"github.com/sakurano/sakura-tools/backend/internal/pdfjob"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
 	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
@@ -36,6 +40,32 @@ func main() {
 	}
 	go an.RunCleanup(bgCtx, cfg.RawRetentionDays)
 
+	var pdfJobs *pdfjob.Service
+	if cfg.PaddleOCRToken != "" {
+		var translator pdfjob.Translator
+		if cfg.TranslateAPIKey != "" && cfg.TranslateBaseURL != "" && cfg.TranslateModel != "" {
+			translator = mdtranslate.New(cfg.TranslateBaseURL, cfg.TranslateAPIKey, cfg.TranslateModel)
+		} else {
+			logger.Info("translation service disabled: TRANSLATION_API_BASE / TRANSLATION_API_KEY / TRANSLATION_MODEL not fully configured")
+		}
+		pdfJobs, err = pdfjob.New(db.DB(), paddleocr.New(cfg.PaddleOCRBaseURL, cfg.PaddleOCRToken, cfg.PaddleOCRModel),
+			translator, logger, pdfjob.Config{
+				TempDir:             filepath.Join(filepath.Dir(cfg.DatabasePath), "pdf-tmp"),
+				TTL:                 time.Duration(cfg.PDFJobTTLHours) * time.Hour,
+				MaxSizeBytes:        int64(cfg.PDFMaxSizeMB) << 20,
+				MaxPages:            cfg.PDFMaxPages,
+				OCRDailyQuota:       cfg.PDFOCRDailyQuota,
+				TranslateDailyQuota: cfg.PDFTranslateDailyQuota,
+			})
+		if err != nil {
+			logger.Error("init pdf jobs", "error", err)
+			os.Exit(1)
+		}
+		go pdfJobs.RunCleanup(bgCtx)
+	} else {
+		logger.Info("pdf ocr service disabled: PADDLEOCR_API_TOKEN not configured")
+	}
+
 	server := &http.Server{
 		Addr: cfg.Address,
 		Handler: httpapi.NewRouter(db, logger, cfg.Mode, cfg.FrontendDir, translation.New(translation.Config{
@@ -43,10 +73,10 @@ func main() {
 			DeepLEndpoint:    cfg.DeepLEndpoint,
 			MyMemoryEmail:    cfg.MyMemoryEmail,
 			MyMemoryEndpoint: cfg.MyMemoryEndpoint,
-		}), an, cfg.AdminToken),
+		}), an, pdfJobs, cfg.AdminToken),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 

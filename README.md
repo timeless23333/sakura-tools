@@ -104,6 +104,47 @@ Dashboard（/admin/analytics）只读聚合表，每行代表一天
 
 应用统计只记录“人的行为”（前端主动上报的事件）。Nginx access log 继续承担运维视角：状态码、带宽、异常请求、爬虫扫描等，两者不会重复计数同一次访问。可选：在 Nginx 中对 `/api/v1/analytics/` 关闭 access log 以减少噪音（见 `nginx/sakurano.xyz.conf` 注释）。
 
+## PDF 转 Markdown（云端 OCR + AI 翻译）
+
+`/tools/pdf-markdown` 提供论文/文档的 PDF → Markdown → 简体中文工作流：
+
+```text
+PDF ──上传──▶ PaddleOCR（AI Studio，PP-StructureV3）──▶ Markdown
+                                              │
+                          下载 / 在 Markdown 编辑器中打开 / AI 翻译
+                                              ▼
+                                    中文 Markdown ──▶ Markdown 编辑器 ──▶ 导出 MD / PDF
+```
+
+- **云端处理，不是本地工具**：页面顶部有明确提示。PDF 上传至 PaddleOCR 解析服务，译文由 AI 翻译服务（OpenAI-compatible 接口）生成。
+- **Markdown 编辑器复用**：生成或翻译结果通过内存交接（`features/markdown/handoff.js`）直接进入现有编辑器，不经服务器、不落存储，刷新即失效。
+- **翻译服务独立抽象**：`internal/pdfjob` 只依赖 `Translator` 接口；`internal/mdtranslate` 提供第一版 OpenAI-compatible 实现，按标题/段落/4000 字符分块，代码与公式块不送模型、References 默认保留原文，按原序合并。
+- **PaddleOCR adapter**：`internal/paddleocr` 实现官方异步 API（`POST /api/v2/ocr/jobs` 提交、轮询至 done、JSONL 逐页拼接 Markdown 并把图片相对路径重写为可访问 URL）；429/5xx 指数退避重试 3 次，401/配额错误直接失败。
+
+### 数据生命周期与限制
+
+| 项 | 策略 |
+| --- | --- |
+| 原始 PDF | 只落数据卷 `pdf-tmp` 临时目录，OCR 提交成功后立即删除 |
+| Markdown / 译文 | 保存在 SQLite `pdf_jobs` 行内，任务 TTL（默认 24 小时）后随任务删除 |
+| 清理 | 后端每小时清理过期任务与孤儿临时文件 |
+| 大小 / 页数 | 默认 18 MB / 100 页（Nginx 侧 20 MB 限制内） |
+| OCR 额度 | 全局 100 次/日；翻译 100 次/日；单 IP 每日 30 次；单 IP 并发 2 |
+
+服务重启时：OCR 进行中的任务自动恢复轮询；翻译进行中的任务自动重跑；未完成上传的任务标记失败。
+
+### 服务器配置
+
+```dotenv
+PADDLEOCR_API_TOKEN=      # AI Studio 访问令牌；留空则该工具接口整体停用
+PADDLEOCR_MODEL=          # 可选，默认 PP-StructureV3
+TRANSLATION_API_BASE=     # OpenAI-compatible 根地址（如 https://api.xxx.com/v1）
+TRANSLATION_API_KEY=
+TRANSLATION_MODEL=        # 如 deepseek-chat、gpt-4o-mini 等
+```
+
+三项翻译配置全部设置后“翻译为中文”才可用；`PADDLEOCR_API_TOKEN` 留空时整个工具返回“未配置”。令牌只存在于服务器 `.env`，不进入前端代码，也不写入日志或 API 响应。
+
 ## 本地开发
 
 要求：Node.js 22+、Go 1.25+。

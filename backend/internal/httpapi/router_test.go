@@ -27,7 +27,7 @@ func newTestRouter(t *testing.T, frontendDir string, adminToken string, translat
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", frontendDir, translator, an, adminToken)
+	return NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", frontendDir, translator, an, nil, adminToken)
 }
 
 func TestHealthAndTools(t *testing.T) {
@@ -55,8 +55,8 @@ func TestHealthAndTools(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Items) != 10 {
-		t.Fatalf("expected 10 tools, got %d", len(body.Items))
+	if len(body.Items) != 11 {
+		t.Fatalf("expected 11 tools, got %d", len(body.Items))
 	}
 
 	spaRequest := httptest.NewRequest(http.MethodGet, "/tools/json", nil)

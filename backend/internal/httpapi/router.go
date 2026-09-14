@@ -4,18 +4,21 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sakurano/sakura-tools/backend/internal/analytics"
+	"github.com/sakurano/sakura-tools/backend/internal/pdfjob"
 	"github.com/sakurano/sakura-tools/backend/internal/store"
 	"github.com/sakurano/sakura-tools/backend/internal/translation"
 )
@@ -29,6 +32,7 @@ type handler struct {
 	logger            *slog.Logger
 	translator        *translation.Service
 	analytics         *analytics.Service
+	pdfJobs           *pdfjob.Service
 	adminToken        string
 	translationMu     sync.Mutex
 	translationLimits map[string]rateWindow
@@ -59,9 +63,10 @@ var toolCatalog = []tool{
 	{Slug: "pdf", Name: "PDF 工具", Category: "文档", Ready: true},
 	{Slug: "pixel-beads", Name: "像素拼豆图纸", Category: "图像", Ready: true},
 	{Slug: "color", Name: "颜色工具", Category: "开发", Ready: true},
+	{Slug: "pdf-markdown", Name: "PDF 转 Markdown", Category: "文档", Ready: true},
 }
 
-func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service, an *analytics.Service, adminToken string) http.Handler {
+func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, translator *translation.Service, an *analytics.Service, pdfJobs *pdfjob.Service, adminToken string) http.Handler {
 	gin.SetMode(mode)
 	router := gin.New()
 	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
@@ -69,7 +74,7 @@ func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, tr
 	}
 	router.Use(gin.Recovery(), requestLogger(logger))
 	h := &handler{
-		store: s, logger: logger, translator: translator, analytics: an, adminToken: adminToken,
+		store: s, logger: logger, translator: translator, analytics: an, pdfJobs: pdfJobs, adminToken: adminToken,
 		translationLimits: make(map[string]rateWindow), analyticsLimits: make(map[string]rateWindow),
 	}
 
@@ -79,6 +84,11 @@ func NewRouter(s *store.Store, logger *slog.Logger, mode, frontendDir string, tr
 	api.POST("/events/tool-opened", h.toolOpened)
 	api.POST("/translate", h.translate)
 	api.POST("/analytics/collect", h.analyticsCollect)
+
+	api.POST("/pdf/jobs", h.pdfCreateJob)
+	api.GET("/pdf/jobs/:id", h.pdfGetJob)
+	api.GET("/pdf/jobs/:id/markdown", h.pdfJobMarkdown)
+	api.POST("/pdf/jobs/:id/translate", h.pdfTranslateJob)
 
 	admin := api.Group("/admin", h.requireAdmin)
 	admin.GET("/analytics/summary", h.adminAnalyticsSummary)
@@ -341,6 +351,115 @@ func externalRefHost(raw, siteHost string) string {
 		host = host[:100]
 	}
 	return host
+}
+
+// ---- PDF → Markdown → 翻译 ----
+
+func pdfServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, pdfjob.ErrInvalidPDF), errors.Is(err, pdfjob.ErrTooManyPages):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, pdfjob.ErrTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+	case errors.Is(err, pdfjob.ErrQuotaExceeded), errors.Is(err, pdfjob.ErrTranslateQuota),
+		errors.Is(err, pdfjob.ErrIPDailyQuota), errors.Is(err, pdfjob.ErrTooManyActive):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+	case errors.Is(err, pdfjob.ErrJobNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, pdfjob.ErrInvalidState), errors.Is(err, pdfjob.ErrMarkdownNotReady):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, pdfjob.ErrNoTranslator):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务暂时不可用"})
+	}
+}
+
+func (h *handler) pdfCreateJob(c *gin.Context) {
+	if h.pdfJobs == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "PDF 解析服务未配置"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.pdfJobs.MaxUploadBytes())
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": pdfjob.ErrTooLarge.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择 PDF 文件"})
+		return
+	}
+	pages := 0
+	if value, err := strconv.Atoi(c.PostForm("pages")); err == nil && value > 0 {
+		pages = value
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取上传的文件"})
+		return
+	}
+	defer file.Close()
+
+	job, err := h.pdfJobs.Create(c.Request.Context(), pdfjob.HashIP(c.ClientIP()), fileHeader.Filename, pages, file)
+	if err != nil {
+		pdfServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, job)
+}
+
+func (h *handler) pdfGetJob(c *gin.Context) {
+	if h.pdfJobs == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "PDF 解析服务未配置"})
+		return
+	}
+	view, err := h.pdfJobs.Get(c.Param("id"))
+	if err != nil {
+		pdfServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (h *handler) pdfJobMarkdown(c *gin.Context) {
+	if h.pdfJobs == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "PDF 解析服务未配置"})
+		return
+	}
+	variant := c.DefaultQuery("variant", "original")
+	markdown, fileName, err := h.pdfJobs.Markdown(c.Param("id"), variant)
+	if err != nil {
+		pdfServiceError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(markdown))
+}
+
+func (h *handler) pdfTranslateJob(c *gin.Context) {
+	if h.pdfJobs == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "PDF 解析服务未配置"})
+		return
+	}
+	var input struct {
+		TranslateReferences bool `json:"translate_references"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		// body 可选，缺省按不翻译 References 处理。
+		input.TranslateReferences = false
+	}
+	if err := h.pdfJobs.StartTranslate(pdfjob.HashIP(c.ClientIP()), c.Param("id"), input.TranslateReferences); err != nil {
+		pdfServiceError(c, err)
+		return
+	}
+	view, err := h.pdfJobs.Get(c.Param("id"))
+	if err != nil {
+		pdfServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, view)
 }
 
 func spaHandler(frontendDir string) gin.HandlerFunc {
