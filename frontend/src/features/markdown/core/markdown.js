@@ -234,7 +234,13 @@ export function renderMarkdown(markdown) {
         block.push(lines[index])
         index += 1
       }
-      blocks.push(sanitizeHtmlBlock(block.join('\n')))
+      const rawHtml = block.join('\n')
+      // PaddleOCR 有时把 <table> 包在 <div>/<html>/<body> 里，交由表格消毒器处理以保留表格结构。
+      if (/<table[\s>]/i.test(rawHtml)) {
+        blocks.push(`<div class="table-wrap html-table">${sanitizeTableHtml(rawHtml)}</div>`)
+      } else {
+        blocks.push(sanitizeHtmlBlock(rawHtml))
+      }
       continue
     }
 
